@@ -945,15 +945,21 @@ footer {
 .risk-map-legend {
   bottom: 12px;
   left: 12px;
-  display: grid;
-  gap: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.risk-map-legend summary {
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .legend-swatch {
   display: inline-block;
-  width: 18px;
-  height: 10px;
-  margin-right: 6px;
+  width: 12px;
+  height: 8px;
+  margin-right: 4px;
   border-radius: 2px;
 }
 
@@ -1535,7 +1541,6 @@ footer {
   .risk-map-controls label { min-height: 32px; }
   .risk-map-controls button { min-height: 40px; }
 
-  .risk-map-legend { display: none; }
 
   .route-panel-fields select,
   .route-mode-toggle button,

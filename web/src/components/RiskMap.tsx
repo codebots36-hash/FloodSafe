@@ -1285,42 +1285,37 @@ export default function RiskMap() {
           </p>
         )}
 
-        <div className="risk-map-legend">
-          <strong>Map legend</strong>
+        {/* Collapsed by default so it never covers the map; tap to open. */}
+        <details className="risk-map-legend">
+          <summary>Legend</summary>
+          <div>
+            {RISK_ORDER.map((riskClass) => (
+              <span
+                key={riskClass}
+                className="legend-swatch"
+                title={riskClass}
+                style={{ background: RISK_COLOURS[riskClass] }}
+              />
+            ))}
+            Low → Extreme
+          </div>
+          <div>
+            <span className="legend-swatch legend-swatch-nodata" />
+            No data
+          </div>
           <div>
             <span className="legend-swatch atlas-swatch" />
-            Hazard area — shaded by class
+            Hazard area
           </div>
           <div>
             <span className="legend-swatch road-swatch-surveyed" />
-            Risk road — surveyed
-          </div>
-          <div>
-            <span className="legend-swatch road-swatch-modelled" />
-            Risk road — modelled (lighter)
-          </div>
-          {RISK_ORDER.map((riskClass) => (
-            <div key={riskClass}>
-              <span
-                className="legend-swatch"
-                style={{ background: RISK_COLOURS[riskClass] }}
-              />
-              Route — {riskClass}
-            </div>
-          ))}
-          <div>
-            <span className="legend-swatch legend-swatch-nodata" />
-            Route — no data
+            Road: surveyed / <span className="legend-swatch road-swatch-modelled" /> modelled
           </div>
           <div>
             <span className="legend-swatch legend-swatch-safest" />
-            Safest — solid
+            Safest / <span className="legend-swatch legend-swatch-fastest" /> Fastest
           </div>
-          <div>
-            <span className="legend-swatch legend-swatch-fastest" />
-            Fastest — thin, underneath
-          </div>
-        </div>
+        </details>
       </div>
 
       <section className="reports-panel" aria-labelledby="reports-heading">
