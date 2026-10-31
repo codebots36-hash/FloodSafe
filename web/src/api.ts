@@ -56,7 +56,18 @@ export async function getRoute(
     mode,
   })
 
-  const response = await fetch(`${API}/route?${params}`)
+  if (!API) {
+    throw new Error(
+      'VITE_API_URL is not set, so the app does not know where the FloodSafe API is.',
+    )
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`${API}/route?${params}`)
+  } catch {
+    throw new Error(`Could not reach the FloodSafe API at ${API}.`)
+  }
 
   if (!response.ok) {
     let detail = `Request failed with status ${response.status}`

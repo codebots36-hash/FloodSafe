@@ -57,13 +57,46 @@ function midpoint(coordinates: number[][]) {
   return coordinates[Math.floor(coordinates.length / 2)] as [number, number]
 }
 
-/** Kilometres of route the API gave no risk class for. */
+const EARTH_RADIUS_KM = 6371
+
+function haversineKm(a: number[], b: number[]) {
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180
+  const dLat = toRadians(b[1] - a[1])
+  const dLon = toRadians(b[0] - a[0])
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(a[1])) * Math.cos(toRadians(b[1])) * Math.sin(dLon / 2) ** 2
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+
+function lineLengthKm(coordinates: number[][]) {
+  let km = 0
+  for (let index = 1; index < coordinates.length; index += 1) {
+    km += haversineKm(coordinates[index - 1], coordinates[index])
+  }
+  return km
+}
+
+/**
+ * summary.km_by_class only covers rated stretches, so the unrated ones are
+ * measured from the geometry rather than inferred from the totals.
+ */
 function noDataKmOf(route: RouteResponse) {
-  const classified = RISK_ORDER.reduce(
-    (total, riskClass) => total + (route.summary.km_by_class[riskClass] ?? 0),
-    0,
-  )
-  return Math.max(0, Math.round((route.distance_km - classified) * 10) / 10)
+  return route.segments
+    .filter((segment) => segment.risk_class === null)
+    .reduce(
+      (km, segment) =>
+        km +
+        lineLengthKm(route.geometry.coordinates.slice(segment.start, segment.end + 1)),
+      0,
+    )
+}
+
+/** Hazard overlays load after the first route, so keep the route on top. */
+function bringRouteToFront(instance: MapLibreMap) {
+  ;[ROUTE_NODATA_LAYER, ROUTE_LAYER].forEach((layerId) => {
+    if (instance.getLayer(layerId)) instance.moveLayer(layerId)
+  })
 }
 
 export default function RiskMap() {
@@ -212,6 +245,8 @@ export default function RiskMap() {
           'visibility',
           'visible',
         )
+
+        bringRouteToFront(instance)
       } catch (loadError) {
         console.error('Failed to load FloodSafe hazard layers:', loadError)
       }
@@ -344,6 +379,8 @@ export default function RiskMap() {
         },
       })
     }
+
+    bringRouteToFront(instance)
 
     if (!route || features.length === 0) return
 
