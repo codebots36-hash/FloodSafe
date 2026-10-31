@@ -13,3 +13,5 @@ pipeline/cache/
 *.tar.gz
 .claude/settings.local.json
 .DS_Store
+api/data/weather_relay.json
+api/data/reports.db*

@@ -69,7 +69,8 @@ def test_nearby_points_share_one_reading():
 
 
 def test_a_point_outside_the_world_is_refused():
-    assert client.get("/weather", params={"lat": 120, "lon": 78}).status_code == 422
+    response = client.get("/weather", params={"lat": 120, "lon": 78})
+    assert (response.status_code, response.json()["error"]) == (400, "bad_request")
 
 
 # Replay reads the ERA5 archive. The two dates below are the Uttarakhand

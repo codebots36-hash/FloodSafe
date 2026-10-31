@@ -30,7 +30,7 @@ Conventions:
   - `risk_source`: `surveyed` or `modelled`, or `null` when `risk_class` is `null`.
   - `landslide_prone`: `true` if the stretch is in a landslide-prone area.
   - `forecast_rain_mm`: rain forecast for the time you reach it, in mm, or `null` if unknown.
-  - `report_id`: id of a community report on this stretch, or `null`.
+  - `report_id`: id of a community report within 50 m of this stretch, or `null`. If there are several, the verified one, then the newest. Not set on a replayed date.
 - `summary.km_by_class`: km of route in each risk class (`LOW`, `MODERATE`, `SIGNIFICANT`, `EXTREME`). Stretches with no score are left out, so these can sum to less than `distance_km`; `notes` then says how many km have no score.
 - `summary.extreme_segments`: number of segments rated `EXTREME`.
 - `notes[]`: short sentences to show the user about this route.
@@ -73,25 +73,32 @@ A **report** ([report.json](report.json)) is:
 - `kind`: `flooded`, `blocked` or `landslide`.
 - `note`: free text from the reporter (may be empty).
 - `created_at`: when it was posted (ISO time).
-- `trust`: `verified` or `unverified`.
+- `trust`: `verified` once 2 other devices have confirmed it, otherwise `unverified`. Verified means confirmed, not proven: nobody has checked the road. Show `trust_reason` to the user as it is.
 - `trust_reason`: short sentence saying why it has that trust level.
-- `confirmations`: number of other people who confirmed it.
-- `near_locality`: name of the nearest locality.
+- `confirmations`: number of other devices that confirmed it.
+- `near_locality`: name of the nearest locality within 5 km, or `null`.
+
+A report never changes a route. It only marks the stretch it lies on (see `report_id` under `/route`).
 
 ### GET /reports → [reports.json](reports.json)
 
-- `items[]`: list of reports.
+- `items[]`: reports from the last 24 hours, newest first, at most 500. Older ones drop out.
 
 ### POST /reports, body [report_create_request.json](report_create_request.json) → [report.json](report.json)
 
-- `lat`, `lon`: where the problem is.
+- `lat`, `lon`: where the problem is. Must be within 2 km of a road inside Uttarakhand, otherwise `too_far_from_road` or `outside_uttarakhand` (400).
 - `kind`: `flooded`, `blocked` or `landslide`.
-- `note`: free text (may be empty).
-- `reporter_id`: random id the app keeps on the device.
+- `note`: free text, at most 280 characters (may be empty). Control characters are replaced with spaces.
+- `reporter_id`: random id the app keeps on the device, 8 to 64 letters, digits, `-` or `_`.
+- The same device sending the same kind within 100 m inside 10 minutes gets the first report back instead of a second.
+- At most 5 reports an hour from one device, then `rate_limited` (429).
 
 ### POST /reports/{id}/confirm, body [report_confirm_request.json](report_confirm_request.json) → [report.json](report.json)
 
-- `reporter_id`: id of the person confirming.
+- `reporter_id`: id of the device confirming.
+- One device counts once, however often it confirms. Confirming your own report gives `own_report` (409); a report older than 24 hours gives `expired` (410); an unknown id gives `not_found` (404).
+
+Bad input of any kind gives 400 with `error` `bad_request` and `detail` naming the field.
 
 ## GET /shelters → [shelters.json](shelters.json) and GET /hospitals → [hospitals.json](hospitals.json)
 
