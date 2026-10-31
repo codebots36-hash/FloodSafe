@@ -13,6 +13,7 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection, LineString } from 'geojson'
 import {
+  API,
   getRouteComparison,
   type RouteFailure,
   type RouteMode,
@@ -30,8 +31,27 @@ import {
 
 setWorkerUrl(workerUrl)
 
-const atlasUrl = '/data/layer_atlas.geojson'
-const roadRiskUrl = '/data/layer_road_risk.geojson'
+const atlasUrl = `${API}/layers/atlas`
+const roadRiskUrl = `${API}/layers/road-risk`
+
+/** Colour a feature by one of its risk-class properties. */
+function classColour(property: 'risk_class' | 'hazard_class'): ExpressionSpecification {
+  return [
+    'match',
+    ['get', property],
+    'LOW',
+    RISK_COLOURS.LOW,
+    'MODERATE',
+    RISK_COLOURS.MODERATE,
+    'SIGNIFICANT',
+    RISK_COLOURS.SIGNIFICANT,
+    'EXTREME',
+    RISK_COLOURS.EXTREME,
+    NO_DATA_COLOUR,
+  ]
+}
+
+type RoadLayerStatus = 'loading' | 'ready' | 'failed'
 
 const NO_DATA = 'NO_DATA'
 
@@ -190,6 +210,11 @@ export default function RiskMap() {
   const [mapReady, setMapReady] = useState(false)
   const [showAtlas, setShowAtlas] = useState(true)
   const [showRoadRisk, setShowRoadRisk] = useState(true)
+  const [roadLayerStatus, setRoadLayerStatus] =
+    useState<RoadLayerStatus>('loading')
+  const [layerError, setLayerError] = useState<string | null>(null)
+  // Read when the layers are added, so a toggle flipped before then sticks.
+  const layerVisibility = useRef({ atlas: true, roadRisk: true })
 
   const [from, setFrom] = useState<Endpoint | null>(null)
   const [to, setTo] = useState<Endpoint | null>(null)
@@ -253,88 +278,88 @@ export default function RiskMap() {
       }
     })
 
-    instance.on('load', async () => {
+    instance.on('load', () => {
       setMapReady(true)
 
-      try {
-        const [atlasResponse, roadResponse] = await Promise.all([
-          fetch(atlasUrl),
-          fetch(roadRiskUrl),
-        ])
-
-        if (!atlasResponse.ok || !roadResponse.ok) {
-          throw new Error('Could not load hazard GeoJSON files')
-        }
-
-        const [atlasData, roadRiskData] = await Promise.all([
-          atlasResponse.json(),
-          roadResponse.json(),
-        ])
-
-        if (map.current !== instance) return
-
-        instance.addSource('atlas-risk', {
-          type: 'geojson',
-          data: atlasData,
-        })
-
-        instance.addLayer({
-          id: 'atlas-risk-fill',
-          type: 'fill',
-          source: 'atlas-risk',
-          paint: {
-            'fill-color': '#e74c3c',
-            'fill-opacity': 0.3,
-          },
-        })
-
-        instance.addLayer({
-          id: 'atlas-risk-outline',
-          type: 'line',
-          source: 'atlas-risk',
-          paint: {
-            'line-color': '#c0392b',
-            'line-width': 2,
-          },
-        })
-
-        instance.addSource('road-risk', {
-          type: 'geojson',
-          data: roadRiskData,
-        })
-
-        instance.addLayer({
-          id: 'road-risk-line',
-          type: 'line',
-          source: 'road-risk',
-          paint: {
-            'line-color': '#8e44ad',
-            'line-width': 5,
-            'line-opacity': 0.85,
-          },
-        })
-
-        // Set initial visibility to match the default checked controls.
-        instance.setLayoutProperty(
-          'atlas-risk-fill',
-          'visibility',
-          'visible',
+      if (!API) {
+        setRoadLayerStatus('failed')
+        setLayerError(
+          'VITE_API_URL is not set, so the risk layers cannot be loaded.',
         )
-        instance.setLayoutProperty(
-          'atlas-risk-outline',
-          'visibility',
-          'visible',
-        )
-        instance.setLayoutProperty(
-          'road-risk-line',
-          'visibility',
-          'visible',
-        )
-
-        bringRouteToFront(instance)
-      } catch (loadError) {
-        console.error('Failed to load FloodSafe hazard layers:', loadError)
+        return
       }
+
+      const visibility = (shown: boolean) => (shown ? 'visible' : 'none')
+
+      // MapLibre fetches and parses these URLs in its worker; the road layer
+      // is about 11 MB, which would stall the page if parsed here.
+      instance.addSource('atlas-risk', { type: 'geojson', data: atlasUrl })
+
+      instance.addLayer({
+        id: 'atlas-risk-fill',
+        type: 'fill',
+        source: 'atlas-risk',
+        layout: { visibility: visibility(layerVisibility.current.atlas) },
+        paint: {
+          'fill-color': classColour('hazard_class'),
+          'fill-opacity': 0.15,
+        },
+      })
+
+      instance.addLayer({
+        id: 'atlas-risk-outline',
+        type: 'line',
+        source: 'atlas-risk',
+        layout: { visibility: visibility(layerVisibility.current.atlas) },
+        paint: {
+          'line-color': classColour('hazard_class'),
+          'line-width': 1,
+          'line-opacity': 0.35,
+        },
+      })
+
+      instance.addSource('road-risk', { type: 'geojson', data: roadRiskUrl })
+
+      instance.addLayer({
+        id: 'road-risk-line',
+        type: 'line',
+        source: 'road-risk',
+        layout: {
+          visibility: visibility(layerVisibility.current.roadRisk),
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': classColour('risk_class'),
+          'line-width': ['interpolate', ['linear'], ['zoom'], 7, 1, 12, 3],
+          // Surveyed roads are solid; modelled ones are drawn lighter.
+          'line-opacity': ['match', ['get', 'risk_source'], 'surveyed', 0.6, 0.3],
+        },
+      })
+
+      bringRouteToFront(instance)
+    })
+
+    // The road layer's data has been parsed once its metadata event fires.
+    instance.on('sourcedata', (event) => {
+      if (event.sourceId === 'road-risk' && event.sourceDataType === 'metadata') {
+        setRoadLayerStatus('ready')
+      }
+    })
+
+    instance.on('error', (event) => {
+      const sourceId = (event as { sourceId?: string }).sourceId
+      if (sourceId !== 'road-risk' && sourceId !== 'atlas-risk') {
+        console.error('Map error:', event.error)
+        return
+      }
+      if (sourceId === 'road-risk') setRoadLayerStatus('failed')
+      setLayerError(
+        sourceId === 'road-risk'
+          ? 'Could not load the road risk layer.'
+          : 'Could not load the hazard area layer.',
+      )
+      console.error(`Failed to load ${sourceId}:`, event.error)
     })
 
     return () => {
@@ -351,6 +376,8 @@ export default function RiskMap() {
   useEffect(() => {
     const instance = map.current
     if (!instance) return
+
+    layerVisibility.current = { atlas: showAtlas, roadRisk: showRoadRisk }
 
     const atlasVisibility = showAtlas ? 'visible' : 'none'
     const roadVisibility = showRoadRisk ? 'visible' : 'none'
@@ -574,15 +601,32 @@ export default function RiskMap() {
 
         <div ref={mapContainer} className="risk-map-canvas" />
 
+        {roadLayerStatus === 'loading' && !layerError && (
+          <p className="risk-layer-status" role="status">
+            <span className="route-spinner" aria-hidden="true" />
+            Loading risk layer…
+          </p>
+        )}
+
+        {layerError && (
+          <p className="risk-layer-status risk-layer-status-error" role="alert">
+            {layerError}
+          </p>
+        )}
+
         <div className="risk-map-legend">
           <strong>Map legend</strong>
           <div>
             <span className="legend-swatch atlas-swatch" />
-            Hazard area
+            Hazard area — shaded by class
           </div>
           <div>
-            <span className="legend-swatch road-swatch" />
-            Risk road
+            <span className="legend-swatch road-swatch-surveyed" />
+            Risk road — surveyed
+          </div>
+          <div>
+            <span className="legend-swatch road-swatch-modelled" />
+            Risk road — modelled (lighter)
           </div>
           {RISK_ORDER.map((riskClass) => (
             <div key={riskClass}>
