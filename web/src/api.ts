@@ -34,6 +34,33 @@ export interface Zone {
   catchment_km2: number
 }
 
+export type ReportKind = 'flooded' | 'blocked' | 'landslide'
+export type ReportTrust = 'verified' | 'unverified'
+
+export interface CommunityReport {
+  id: string
+  lat: number
+  lon: number
+  kind: ReportKind
+  note: string
+  created_at: string
+  trust: ReportTrust
+  trust_reason: string
+  confirmations: number
+  near_locality: string
+}
+
+export interface ReportsResponse {
+  items: CommunityReport[]
+}
+
+export interface CreateReportRequest {
+  lat: number
+  lon: number
+  kind: ReportKind
+  note: string
+  reporter_id: string
+}
 export type WeatherSource = 'live' | 'relay' | 'replay'
 
 export interface WeatherResponse {
@@ -86,6 +113,52 @@ export interface ApiError {
   detail: string
 }
 
+async function reportRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(url, init)
+  } catch {
+    throw new Error('Waiting for live data')
+  }
+
+  if (!response.ok) {
+    let detail = `Request failed with status ${response.status}`
+    try {
+      const body: ApiError = await response.json()
+      if (body?.detail) detail = body.detail
+    } catch {
+      // Keep the status text when the response is not the documented error shape.
+    }
+    throw new Error(detail)
+  }
+
+  return (await response.json()) as T
+}
+
+export async function getReports(): Promise<ReportsResponse> {
+  return reportRequest<ReportsResponse>(`${API}/reports`)
+}
+
+export async function createReport(
+  request: CreateReportRequest,
+): Promise<CommunityReport> {
+  return reportRequest<CommunityReport>(`${API}/reports`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+}
+
+export async function confirmReport(
+  id: string,
+  reporterId: string,
+): Promise<CommunityReport> {
+  return reportRequest<CommunityReport>(`${API}/reports/${encodeURIComponent(id)}/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reporter_id: reporterId }),
+  })
+}
 /** Fetch watched zones without falling back to the example contract file. */
 export async function getZones(): Promise<ZonesResponse> {
   if (!API) {
@@ -239,5 +312,6 @@ export async function getRouteComparison(
 
   return comparison
 }
+
 
 
