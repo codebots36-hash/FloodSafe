@@ -227,13 +227,18 @@ def sample_spans(off, ll):
             np.concatenate([lon, ll[last, 0]]), np.concatenate([lat, ll[last, 1]]))
 
 
+def atlas_grid(shape, gt):
+    """Atlas class + 1 per cell on the 30 m grid (1-4 = LOW..EXTREME), 0 = not in the atlas."""
+    atlas_gdf = gpd.read_file(os.path.join(OUT, "atlas_hazard.geojson")).to_crs(CRS)
+    code = {n: i + 1 for i, n in enumerate(CLASS_NAMES)}
+    return rasterize(((g, code[c]) for g, c in zip(atlas_gdf.geometry, atlas_gdf["hazard_class"])),
+                     out_shape=shape, transform=Affine.from_gdal(*gt), dtype="uint8")
+
+
 def score_edges(index, prone_cut, gt):
     t0 = time.time()
     ffpi, _ = read_grid(os.path.join(OUT, "ffpi_class.tif"))
-    atlas_gdf = gpd.read_file(os.path.join(OUT, "atlas_hazard.geojson")).to_crs(CRS)
-    code = {n: i + 1 for i, n in enumerate(CLASS_NAMES)}
-    atlas = rasterize(((g, code[c]) for g, c in zip(atlas_gdf.geometry, atlas_gdf["hazard_class"])),
-                      out_shape=ffpi.shape, transform=Affine.from_gdal(*gt), dtype="uint8")
+    atlas = atlas_grid(ffpi.shape, gt)
 
     off = np.load(os.path.join(GRAPH, "edge_geom_offsets.npy"))
     ll = np.load(os.path.join(GRAPH, "edge_geom_lonlat.npy"))
