@@ -15,11 +15,13 @@ Outputs
     pipeline/out/layers/atlas.geojson      atlas polygons, simplified
     pipeline/out/road_risk_meta.json
 
-Landslide susceptibility is a transparent index, not a trained model: a
-weighted sum of slope, local relief and land cover scores (tables below; a
-modelling choice). It is checked, never tuned, against the NASA Global
-Landslide Catalog: ROC AUC of event points vs random points in the state.
-Landslide-prone = the top 10% of the index inside the state.
+Landslide-prone comes from the trained model (train_landslide_model.py)
+when that model beat this index on held-out ground ("use_model" in
+out/landslide_model_meta.json): each road takes its worst point's
+probability, and the top 10% of state road length is prone. Otherwise it falls back to the transparent
+index below: a weighted sum of slope, local relief and land cover scores
+(tables below; a modelling choice), checked, never tuned, against the NASA
+Global Landslide Catalog. Index-prone = the top 10% of the index in the state.
 
 Each road is sampled about every 30 m. A sample takes the atlas class where it
 falls in an atlas polygon ("surveyed"), else the FFPI class ("modelled"). The
@@ -48,6 +50,7 @@ from shapely.ops import linemerge
 
 from build_ffpi import CACHE as FFPI_CACHE, CLASS_NAMES, CRS, OUT, RAW, RES, \
     create_like, cutoffs_from_hist, log, row_blocks
+import train_landslide_model as slide_model
 
 GRAPH = os.path.join(OUT, "graph")
 LAYERS = os.path.join(OUT, "layers")
@@ -81,6 +84,7 @@ LANDCOVER_SCORE = {            # ESA WorldCover class -> score
 }
 INDEX_SCALE = 200              # index 0-1 stored as uint8 0-200; 255 = no data
 PRONE_PERCENTILE = 90
+PRONE_ROAD_SHARE = 0.10          # trained model: share of state road length flagged
 N_RANDOM = 10_000
 AUC_WARN = 0.6
 
@@ -253,17 +257,49 @@ def score_edges(index, prone_cut, gt):
                      np.where(f < 4, 2 * f.astype(np.int16), -1))
     score[~ok] = -1
     li = index[row, col]
-    slide = ok & (li != 255) & (li > prone_cut)
-
+    in_state = ok & (li != 255)
     n_span = len(off) - 1
+    span_slide = np.zeros(n_span, dtype=bool)
+    model, meta = trained_model()
+    if model is not None:
+        p = np.zeros(len(row), dtype=np.float32)
+        todo = np.flatnonzero(in_state)
+        for chunk in np.array_split(todo, max(1, len(todo) // 1_000_000)):
+            p[chunk] = model.predict_proba(slide_model.features(row[chunk], col[chunk]))[:, 1]
+        # A road takes its worst point. The cut is set on roads, weighted by their
+        # sample count (~length), so PRONE_ROAD_SHARE of road length is flagged:
+        # a cut on points would flag almost every long road somewhere along it.
+        span_p = np.full(n_span, -1.0, dtype=np.float32)
+        np.maximum.at(span_p, span[in_state], p[in_state])
+        weight = np.bincount(span[in_state], minlength=n_span)
+        order = np.argsort(-span_p)
+        flagged = order[np.cumsum(weight[order]) <= PRONE_ROAD_SHARE * weight.sum()]
+        span_slide[flagged] = True
+        meta["prone_cutoff"] = round(float(span_p[flagged].min()), 4) if len(flagged) else None
+        log(f"landslide-prone from the trained model (CV AUC {meta['validation']['model_auc']}): "
+            f"worst-point probability >= {meta['prone_cutoff']}", t0)
+    else:
+        span_slide[span[in_state & (li > prone_cut)]] = True
+
     span_score = np.full(n_span, -1, dtype=np.int16)
     np.maximum.at(span_score, span, score)
-    span_slide = np.zeros(n_span, dtype=bool)
-    span_slide[span[slide]] = True
     span_risk = np.where(span_score >= 0, span_score // 2, 255).astype(np.uint8)
     span_surveyed = (span_score >= 0) & (span_score % 2 == 1)
     log("edges: scored", t0)
-    return span_risk, span_surveyed, span_slide, off, ll, li[ok & (li != 255)]
+    return span_risk, span_surveyed, span_slide, off, ll, li[in_state], meta
+
+
+def trained_model():
+    """(model, meta) when train_landslide_model.py's model beat the index, else (None, meta or None)."""
+    if not os.path.exists(slide_model.META_PATH):
+        return None, None
+    with open(slide_model.META_PATH, encoding="utf-8") as fh:
+        meta = json.load(fh)
+    if not meta["use_model"]:
+        log("landslide model did not beat the index on held-out ground; using the index")
+        return None, meta
+    import joblib
+    return joblib.load(slide_model.MODEL_PATH), meta
 
 
 def feature_collection(features):
@@ -339,7 +375,7 @@ def main():
     prone_share = 100 * hist[prone_cut + 1:].sum() / hist.sum()
     log(f"landslide-prone: index > {prone_cut / INDEX_SCALE:.3f} "
         f"({prone_share:.1f}% of state cells)")
-    span_risk, span_surveyed, span_slide, off, ll, road_vals = score_edges(index, prone_cut, gt)
+    span_risk, span_surveyed, span_slide, off, ll, road_vals, slide_meta = score_edges(index, prone_cut, gt)
     validation = validate(index, gt, state_mask, road_vals)
     del index, state_mask, road_vals
 
@@ -380,8 +416,10 @@ def main():
             "prone_rule": f"top {100 - PRONE_PERCENTILE}% of the index inside the state",
             "prone_cutoff": prone_cut / INDEX_SCALE,
             "validation_nasa_glc": validation,
-            "note": "Transparent index, not a trained model; weights are a modelling choice "
-                    "and were not tuned to the validation AUC.",
+            "note": "Transparent index; weights are a modelling choice and were not tuned to "
+                    "the validation AUC. Used for the prone flag only when the trained model "
+                    "did not beat it.",
+            "trained_model": slide_meta,
         },
         "layers": layers,
     }

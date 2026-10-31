@@ -11,7 +11,7 @@ FloodSafe is flood-aware navigation for Uttarakhand, India. It routes people aro
 ## How it works
 
 1. **Risk map.** A Flash Flood Potential Index (Smith 2003) is computed for the whole state at 30 m from slope, soil, land cover and forest density. Where the state hazard atlas covers a place, its surveyed flood zones are used instead and marked `surveyed`; everywhere else the class is `modelled`.
-2. **Road risk.** Every road segment in OpenStreetMap is sampled about every 30 m and takes the worst class along it, plus a landslide-prone flag.
+2. **Road risk.** Every road segment in OpenStreetMap is sampled about every 30 m and takes the worst class along it, plus a landslide-prone flag from a machine-learning model trained on recorded landslides (the top 10% of road length).
 3. **Routing.** Fastest minimises travel time. Safest minimises travel time multiplied by a risk penalty per segment (see `api/app/routing.py`); the penalties are a modelling choice, not an official rule.
 4. **Forecast-timed routing.** Safest judges each road on the rain at the hour you would reach it (`depart`): a risky road costs 2x more where its nearest zone is WATCH then, 4x at CRITICAL. Each stretch of the answer carries that hour's rain.
 5. **Zones.** 200 watched places turn WATCH or CRITICAL when live rain reaches depths calibrated on 24 monsoons of rainfall against recorded floods. A phone can subscribe to a push alert when its zone turns CRITICAL.
@@ -53,9 +53,10 @@ Run from the repository root, in this order. Raw files go to `pipeline/raw/`, wh
 | 2 | `pipeline/build_graph.py` | road graph |
 | 3 | `pipeline/build_ffpi.py` | statewide flood index and classes |
 | 4 | `pipeline/atlas_render.py`, `atlas_georef.py`, `atlas_classify.py` | surveyed flood zones from the atlas |
-| 5 | `pipeline/build_road_risk.py` | per-road risk, landslide flag, map layers |
-| 6 | `pipeline/build_places.py` | localities, shelters, hospitals, 200 zones |
-| 7 | `pipeline/fetch_era5.py`, then `calibrate_thresholds.py` | rain thresholds |
+| 5 | `pipeline/train_landslide_model.py` | landslide model and its held-out skill (needs scikit-learn) |
+| 6 | `pipeline/build_road_risk.py` | per-road risk, landslide flag, map layers |
+| 7 | `pipeline/build_places.py` | localities, shelters, hospitals, 200 zones |
+| 8 | `pipeline/fetch_era5.py`, then `calibrate_thresholds.py` | rain thresholds |
 
 ## Data sources and licences
 
@@ -69,7 +70,7 @@ Everything is real, published data. Nothing is simulated.
 | Soil sand and clay | SoilGrids v2.0, ISRIC | CC BY 4.0 |
 | Catchment area | HydroBASINS Asia level 8, HydroSHEDS | free use with attribution |
 | Surveyed flood zones | State hazard atlas, section 3.4.3 "Flash flood hazard zones", Figure 3.72 (Map Ref 050000000_H_FLFLZ0100Y) | **publisher and licence to be confirmed**: the PDF carries neither |
-| Landslide validation | NASA Global Landslide Catalog | open NASA data |
+| Landslide model training and validation | NASA Global Landslide Catalog | open NASA data |
 | Recorded floods | India Flood Inventory v3, Saharia et al. 2021, Zenodo 10.5281/zenodo.4742142 | CC BY-NC 4.0, non-commercial use |
 | Historic rain (calibration, replay) | ERA5 reanalysis via the Open-Meteo archive API | Copernicus licence, CC BY 4.0 |
 | Live rain | Open-Meteo forecast API | CC BY 4.0, free for non-commercial use. "Weather data by Open-Meteo.com" |
@@ -80,6 +81,6 @@ Everything is real, published data. Nothing is simulated.
 - **Rain thresholds.** WATCH fires on 15% of quiet monsoon days and CRITICAL on 5%. At those levels WATCH catches about 35% of the 206 recorded flood district-days and CRITICAL about 21%. Rainfall alone cannot see a cloudburst over one valley, and catching more floods means warning on far more quiet days. The full operating curve is in `api/data/thresholds.json`.
 - **Per-zone adjustment.** Shifting each zone's depths by hazard class and soil group is a modelling choice, not a fitted result.
 - **Atlas accuracy.** The atlas map is embedded at about 100 dpi, so one source pixel is about 400 m on the ground. Its zones are good to a few kilometres.
-- **Landslide index.** A transparent index of slope, relief and land cover, with weights that were not tuned. Against the NASA catalogue it separates events from random points inside the state no better than chance (ROC AUC 0.49), and from random road points moderately (0.71). Treat the landslide flag as a hint, not a prediction.
+- **Landslide model.** Gradient-boosted trees on 11 terrain, soil and land-cover features, trained on the 109 NASA catalogue landslides in Uttarakhand placed within 10 km (each moved to the nearest road within that accuracy) against 1,089 road points at least 5 km from any. On held-out 25 km blocks it ranks landslides above other roads with ROC AUC 0.84, against 0.74 for the old hand-weighted index on the same points (better in 4 of 5 folds). The catalogue is collected from news and most events are placed only to 5 or 10 km, so treat the flag as a strong hint, not a prediction. Details: `pipeline/out/landslide_model_meta.json`. If a retrained model ever stops beating the index, the build falls back to the index on its own.
 - **Forecast-timed routing** reads each road's rain from the nearest of the 200 zones within 20 km, and times it by the Fastest arrival from the start, which is earlier than Safest's own when Safest detours. Replay uses the rain that fell (ERA5), not the forecast issued that day.
 - **Roads outside Uttarakhand** have no risk class and are shown as "no data", never as safe.
