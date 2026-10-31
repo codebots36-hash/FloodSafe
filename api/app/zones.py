@@ -19,7 +19,7 @@ api/data/thresholds.json and is never hidden behind the status.
 import json
 import os
 
-from app.weather import WeatherUnavailable, history, index_now, key, payloads, series, total
+from app.weather import WeatherUnavailable, history, index_now, key, payloads, series, taken_at, total
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 WINDOWS = {"h1": 1, "h3": 3, "h24": 24}
@@ -103,9 +103,10 @@ def current(replay=None):
     rain_by_cell, time_by_cell = {}, {}
     for cell, (payload, _) in found.items():
         times, values = series(payload)
-        hour = index_now(times) if at is None else min(at, len(times) - 1)
+        # A stored reading is read as of when it was taken (see weather.index_now).
+        hour = index_now(times, payload) if at is None else min(at, len(times) - 1)
         rain_by_cell[cell] = _rain(values, hour)
-        time_by_cell[cell] = times[hour]
+        time_by_cell[cell] = taken_at(payload, times, hour) if at is None else times[hour]
 
     sources, out = set(), []
     for zone in zones:

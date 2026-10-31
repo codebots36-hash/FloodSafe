@@ -1,0 +1,38 @@
+# Fetches Open-Meteo rainfall from GitHub's addresses and hands it to the API,
+# whose own host is over Open-Meteo's free daily quota. See
+# pipeline/relay_rainfall.py.
+#
+# Needs two repository secrets:
+#   FLOODSAFE_API_URL        https://floodsafe-api-xxxx.onrender.com
+#   RAINFALL_RELAY_SECRET    the same value as the environment variable on Render
+#
+# GitHub's schedule is best effort and can run late or skip an hour. For a demo,
+# run the script from a laptop with --every 3600 as well, or press "Run workflow".
+
+name: Rainfall relay
+
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            api/app/weather.py
+            api/data/zones.json
+            pipeline/relay_rainfall.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests==2.34.2
+      - name: Relay rainfall to the API
+        env:
+          RAINFALL_RELAY_SECRET: ${{ secrets.RAINFALL_RELAY_SECRET }}
+        run: python pipeline/relay_rainfall.py "${{ secrets.FLOODSAFE_API_URL }}"
