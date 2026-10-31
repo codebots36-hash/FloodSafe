@@ -41,8 +41,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app import forecast, push, reports, sachet, sos
 from app.forecast import parse_depart
 from app.graph import get_graph
-from app.routing import (MAX_DETOUR, RoutingError, km_by_class, rain_factor, route, safest_weights,
-                         segments)
+from app.routing import (MAX_DETOUR, RoutingError, km_by_class, route, route_timed,
+                         safest_weights, segments)
 from app.store import DBError
 from app.weather import WeatherUnavailable, parse_day, readings, replayed, store
 from app.zones import current as current_zones
@@ -178,26 +178,24 @@ def get_route(
     result = route(graph, start, end)
     zone = forecast.edge_zones(graph) if sky else None
     if mode == "safest":
-        extra = None
-        if sky:
-            # Each road is judged on the rain at the hour you could first reach
-            # it, which is its Fastest arrival time from the start.
-            # ponytail: Fastest arrival stands in for Safest's own (later) one;
-            # a time-dependent Dijkstra would be exact.
-            arrive = leave.timestamp() + result["costs"][np.asarray(graph.edge_u)]
-            extra = rain_factor(graph, sky.at(zone, arrive)[1])
+        penalty = None
         if not day:  # reports are about now, so a replayed past date has none
             try:
                 penalty = reports.penalties(graph, reports.active())
             except DBError as exc:
                 print(f"[reports] could not read reports for routing: {exc}", flush=True)
-                penalty = None
-            if penalty is not None:
-                extra = penalty if extra is None else extra * penalty
+
+        def safest(level):
+            weights = safest_weights(graph, level, penalty)
+            if sky:
+                # Each road is judged on the rain at the hour this route reaches it.
+                return route_timed(graph, start, end, weights, leave.timestamp(), sky, zone)
+            return route(graph, start, end, weights)
+
         fastest_m = result["distance_m"]
-        result = route(graph, start, end, safest_weights(graph, "strict", extra))
+        result = safest("strict")
         if result["distance_m"] > MAX_DETOUR * fastest_m:
-            result = route(graph, start, end, safest_weights(graph, "mild", extra))
+            result = safest("mild")
             notes.append(f"Avoiding every risky road meant a route over {MAX_DETOUR} times "
                          "longer, so this one uses milder risk penalties.")
 
