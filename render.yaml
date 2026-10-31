@@ -30,3 +30,13 @@ services:
         sync: false
       - key: TEXTBEE_DEVICE_ID
         sync: false
+  - type: web
+    name: floodsafe-web
+    runtime: static
+    branch: main
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://floodsafe-api-4nzc.onrender.com

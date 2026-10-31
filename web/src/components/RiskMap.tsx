@@ -453,7 +453,7 @@ export default function RiskMap() {
             tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
             tileSize: 256,
             attribution:
-              '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+              '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> · Weather data by <a href="https://open-meteo.com/">Open-Meteo.com</a>',
           },
         },
         layers: [
