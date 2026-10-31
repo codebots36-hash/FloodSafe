@@ -17,21 +17,23 @@ pipeline/build_road_risk.py; places from pipeline/build_places.py.
 Run from api/: uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
 
+import hmac
 import os
 import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 
 from app import reports
 from app.graph import get_graph
 from app.routing import MAX_DETOUR, RoutingError, km_by_class, route, safest_weights, segments
-from app.weather import WeatherUnavailable, parse_day, readings, replayed
+from app.weather import WeatherUnavailable, parse_day, readings, replayed, store
 from app.zones import current as current_zones
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -210,6 +212,24 @@ def get_weather(
         return (replayed([(lat, lon)], day) if day else readings([(lat, lon)]))[0]
     except WeatherUnavailable as exc:
         raise RoutingError("weather_unavailable", str(exc), 503)
+
+
+class WeatherRelay(BaseModel):
+    cells: dict[str, dict]
+
+
+@app.post("/relay/weather")
+def relay_weather(body: WeatherRelay, x_relay_secret: str | None = Header(None)):
+    """Rainfall fetched from another address; see pipeline/relay_rainfall.py.
+
+    Off unless RAINFALL_RELAY_SECRET is set on the server, and it must match.
+    """
+    secret = os.environ.get("RAINFALL_RELAY_SECRET", "")
+    if not secret:
+        raise RoutingError("not_configured", "The rainfall relay is not switched on here.", 503)
+    if not hmac.compare_digest((x_relay_secret or "").encode(), secret.encode()):
+        raise RoutingError("forbidden", "Wrong relay secret.", 403)
+    return {"ok": True, "kept": store(body.cells)}
 
 
 @app.get("/zones")

@@ -13,11 +13,16 @@ minutes.
 A failed refresh serves the last good reading, with the "as_of" time it was
 taken, rather than nothing. A gap is never filled with a made-up value.
 
+A shared host is often over Open-Meteo's free daily quota (Render was: HTTP 429
+"Daily API request limit exceeded"). store() takes readings fetched from another
+address, by pipeline/relay_rainfall.py, so the host need not fetch at all.
+
 Source: Open-Meteo forecast API (https://open-meteo.com), CC-BY 4.0.
 """
 
 import json
 import os
+import re
 import threading
 from datetime import date, datetime, timedelta, timezone
 
@@ -114,10 +119,22 @@ def series(payload):
     return [datetime.fromisoformat(s).replace(tzinfo=IST) for s in stamps], values
 
 
-def index_now(times):
-    """Where "now" sits in the series, which runs from the past into the forecast."""
-    now = datetime.now(IST)
-    return max((i for i, t in enumerate(times) if t <= now), default=0)
+def taken_at(payload, times, i):
+    """When a payload's reading was taken: its own clock, else the hour at index i."""
+    stamp = (payload.get("current") or {}).get("time")
+    return datetime.fromisoformat(stamp).replace(tzinfo=IST) if stamp else times[i]
+
+
+def index_now(times, payload=None):
+    """Where "now" sits in the series, which runs from the past into the forecast.
+
+    A stored reading (the relay copy, or the last good one after a failed
+    refresh) is read as of when it was taken, not as of the real now: the hours
+    in it after that are forecast, and calling them rain that fell would be
+    wrong. Without a payload it is the real now.
+    """
+    limit = taken_at(payload, times, 0) if payload else datetime.now(IST)
+    return max((i for i, t in enumerate(times) if t <= limit), default=0)
 
 
 def index_peak(times, values, day):
@@ -146,12 +163,11 @@ def reading(payload, source, index=None):
     not a forecast, which is what "source": "replay" is there to say.
     """
     times, values = series(payload)
-    i = index_now(times) if index is None else index
+    i = index_now(times, payload) if index is None else index
     current = payload.get("current") or {}
     live_now = index is None and current.get("time")
     return {
-        "as_of": (datetime.fromisoformat(current["time"]).replace(tzinfo=IST) if live_now
-                  else times[i]).isoformat(timespec="seconds"),
+        "as_of": (taken_at(payload, times, i) if index is None else times[i]).isoformat(timespec="seconds"),
         "source": source,
         "current_mm_h": current.get("precipitation") if live_now else total(values, i, 1),
         "last_72h_mm": total(values, i, TRAILING_HOURS),
@@ -192,6 +208,37 @@ def payloads(points):
             _save_relay()
         return {k: (relay[k]["payload"], "live" if k in fetched else "relay")
                 for k in keys if k in relay}
+
+
+CELL = re.compile(r"^-?\d+\.\d,-?\d+\.\d$")
+
+
+def store(cells):
+    """Keep readings fetched somewhere else as this hour's copy; returns how many.
+
+    The server's own address can be over Open-Meteo's free daily quota (a shared
+    host usually is), so pipeline/relay_rainfall.py fetches from another address
+    and sends the payloads here. A cell is kept only if it is shaped like one of
+    ours and its series reaches the present; the hour is stamped here, not taken
+    on trust from the sender.
+    """
+    hour, now, kept = _hour(), datetime.now(IST), 0
+    with _lock:
+        relay = _load_relay()
+        for cell, payload in cells.items():
+            if not CELL.match(cell) or not isinstance(payload, dict):
+                continue
+            try:
+                times, _ = series(payload)
+            except (WeatherUnavailable, ValueError):
+                continue
+            if not times[0] <= now <= times[-1]:
+                continue
+            relay[cell] = {"hour": hour, "payload": payload}
+            kept += 1
+        if kept:
+            _save_relay()
+    return kept
 
 
 def readings(points):

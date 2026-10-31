@@ -30,6 +30,8 @@ Tests: `pip install -r requirements-dev.txt`, then `python -m pytest -q` from `a
 
 The API needs the road graph in `pipeline/out/graph/` (or `api/data/graph/`, or the folder named by `GRAPH_DIR`), built by the pipeline below. Endpoints and their exact shapes are in [contracts/](contracts/README.md).
 
+Rain on a shared host: Open-Meteo's free quota is per address and a shared host is usually over it (Render got HTTP 429), so live rain can be fetched elsewhere and sent to the API. Set `RAINFALL_RELAY_SECRET` on the API, then run `RAINFALL_RELAY_SECRET=... python pipeline/relay_rainfall.py <api address> --every 3600` from a laptop, or let `.github/workflows/rainfall-relay.yml` do it hourly. The API marks those readings `relay` and the time they were taken. The relay is off unless the secret is set.
+
 Web app: in `web/`, create `.env.local` containing `VITE_API_URL=` followed by the API's address (no trailing slash), then `npm install` and `npm run dev`. Restart the dev server after changing it.
 
 ## Rebuild the data
