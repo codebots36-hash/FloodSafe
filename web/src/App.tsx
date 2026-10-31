@@ -4,6 +4,7 @@ import RiskMap from './components/RiskMap'
 import FloodGuidance from './components/FloodGuidance'
 import OfficialWarnings from './components/OfficialWarnings'
 import ResponderDashboard from './components/ResponderDashboard'
+import NotificationSettings from './components/NotificationSettings'
 
 function App() {
   return (
@@ -70,6 +71,7 @@ function App() {
 
       <OfficialWarnings />
       <ResponderDashboard />
+      <NotificationSettings />
 
       <footer>
         <span>FloodSafe</span>

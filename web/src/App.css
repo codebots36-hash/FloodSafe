@@ -388,3 +388,56 @@ footer {
     grid-template-columns: 1fr;
   }
 }
+.notification-card {
+  background: #ffffff;
+  border: 1px solid #dce5ed;
+  border-radius: 20px;
+  padding: 24px;
+  margin: 24px 0;
+  box-shadow: 0 8px 24px rgba(20, 50, 80, 0.05);
+}
+
+.notification-card h3 {
+  margin: 8px 0;
+  color: #17324d;
+}
+
+.notification-card .section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.notification-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #17324d;
+  font-weight: 600;
+}
+
+.notification-options {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+  padding: 16px;
+  background: #f5f8fb;
+  border-radius: 12px;
+}
+
+.notification-options label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #17324d;
+}
+
+.notification-options input,
+.notification-toggle input {
+  accent-color: #2563eb;
+}
+
+.notification-options input:disabled {
+  cursor: not-allowed;
+}
