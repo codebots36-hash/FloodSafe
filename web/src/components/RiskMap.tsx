@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   type ExpressionSpecification,
   type GeoJSONSource,
@@ -7,6 +7,7 @@ import {
   Map as MapLibreMap,
   Marker,
   NavigationControl,
+  Popup,
   setWorkerUrl,
 } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
@@ -14,13 +15,23 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection, LineString } from 'geojson'
 import {
   API,
+  confirmReport,
+  createReport,
+  getReports,
   getRouteComparison,
+  getZones,
+  getWeather,
+  type CommunityReport,
+  type ReportKind,
   type RouteFailure,
   type RouteMode,
   type RouteResponse,
+  type Zone,
+  type WeatherResponse,
 } from '../api'
 import { routeVerdict } from '../routeVerdict'
 import RoutePanel from './RoutePanel'
+import './Zones.css'
 import {
   NO_DATA_COLOUR,
   PLACES,
@@ -58,6 +69,39 @@ const NO_DATA = 'NO_DATA'
 /** Drawn bottom to top: Fastest sits underneath Safest. */
 const ROUTE_MODES: RouteMode[] = ['fastest', 'safest']
 
+const REPORTER_STORAGE_KEY = 'floodsafe.reporter_id'
+let fallbackReporterId: string | null = null
+
+function getOrCreateReporterId() {
+  try {
+    const saved = window.localStorage.getItem(REPORTER_STORAGE_KEY)
+    if (saved) return saved
+
+    const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+    const reporterId = `anon-${randomId}`
+    window.localStorage.setItem(REPORTER_STORAGE_KEY, reporterId)
+    return reporterId
+  } catch {
+    fallbackReporterId ??= `anon-${Math.random().toString(36).slice(2)}`
+    return fallbackReporterId
+  }
+}
+
+function errorDetail(error: unknown) {
+  return error instanceof Error ? error.message : 'Waiting for live data'
+}
+
+const REPORT_KIND_ICONS: Record<ReportKind, string> = {
+  flooded: '≈',
+  blocked: '!',
+  landslide: '▲',
+}
+
+const REPORT_KIND_LABELS: Record<ReportKind, string> = {
+  flooded: 'Flooded',
+  blocked: 'Blocked',
+  landslide: 'Landslide',
+}
 const routeIds = (mode: RouteMode) => ({
   source: `route-${mode}`,
   line: `route-${mode}-line`,
@@ -203,11 +247,26 @@ function addRouteLayers(instance: MapLibreMap, mode: RouteMode) {
 export default function RiskMap() {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
+  const rainPopup = useRef<Popup | null>(null)
   const endpointMarkers = useRef<Marker[]>([])
+  const zoneMarkers = useRef<Marker[]>([])
   const noDataLabels = useRef<Marker[]>([])
+  const reportMarkers = useRef<Marker[]>([])
   const pickTarget = useRef<'from' | 'to'>('from')
 
   const [mapReady, setMapReady] = useState(false)
+  const [zones, setZones] = useState<Zone[] | null>(null)
+  const [showAllZones, setShowAllZones] = useState(false)
+  const [zoneSearch, setZoneSearch] = useState('')
+  const [rainPoint, setRainPoint] = useState<Endpoint | null>(null)
+  const [weather, setWeather] = useState<WeatherResponse | null>(null)
+  const [reports, setReports] = useState<CommunityReport[] | null>(null)
+  const [reportListError, setReportListError] = useState<string | null>(null)
+  const [reportPoint, setReportPoint] = useState<Endpoint | null>(null)
+  const [reportKind, setReportKind] = useState<ReportKind>('flooded')
+  const [reportNote, setReportNote] = useState('')
+  const [reportActionError, setReportActionError] = useState<string | null>(null)
+  const [confirmingReportId, setConfirmingReportId] = useState<string | null>(null)
   const [showAtlas, setShowAtlas] = useState(true)
   const [showRoadRisk, setShowRoadRisk] = useState(true)
   const [roadLayerStatus, setRoadLayerStatus] =
@@ -228,6 +287,45 @@ export default function RiskMap() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const filteredZones = zones?.filter((zone) =>
+    `${zone.name} ${zone.district}`.toLocaleLowerCase().includes(zoneSearch.trim().toLocaleLowerCase()),
+  ) ?? null
+
+  useEffect(() => {
+    let active = true
+    getReports()
+      .then((response) => {
+        if (active) {
+          setReports(response.items)
+          setReportListError(null)
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setReports(null)
+          setReportListError(errorDetail(error))
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+  useEffect(() => {
+    let active = true
+    getZones()
+      .then((response) => {
+        if (active) setZones(response.zones)
+      })
+      .catch(() => {
+        // Keep the neutral waiting state until the live endpoint is available.
+        if (active) setZones(null)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
   useEffect(() => {
     if (!mapContainer.current || map.current) return
 
@@ -276,6 +374,35 @@ export default function RiskMap() {
         pickTarget.current = 'from'
         setNextClickSets('from')
       }
+
+      const popupContent = document.createElement('div')
+      popupContent.className = 'rain-popup'
+      const popupButton = document.createElement('button')
+      popupButton.type = 'button'
+      popupButton.className = 'rain-here-button'
+      popupButton.textContent = 'Rain here'
+      popupButton.addEventListener('click', (popupEvent) => {
+        popupEvent.stopPropagation()
+        setWeather(null)
+        setRainPoint(picked)
+      })
+      const reportButton = document.createElement('button')
+      reportButton.type = 'button'
+      reportButton.className = 'rain-here-button report-here-button'
+      reportButton.textContent = 'Report here'
+      reportButton.addEventListener('click', (popupEvent) => {
+        popupEvent.stopPropagation()
+        setReportKind('flooded')
+        setReportNote('')
+        setReportActionError(null)
+        setReportPoint(picked)
+      })
+      popupContent.append(popupButton, reportButton)
+      rainPopup.current?.remove()
+      rainPopup.current = new Popup({ closeButton: true, closeOnClick: false, offset: 12 })
+        .setLngLat([picked.lon, picked.lat])
+        .setDOMContent(popupContent)
+        .addTo(instance)
     })
 
     instance.on('load', () => {
@@ -365,8 +492,14 @@ export default function RiskMap() {
     return () => {
       endpointMarkers.current.forEach((marker) => marker.remove())
       endpointMarkers.current = []
+      zoneMarkers.current.forEach((marker) => marker.remove())
+      zoneMarkers.current = []
+      reportMarkers.current.forEach((marker) => marker.remove())
+      reportMarkers.current = []
       noDataLabels.current.forEach((marker) => marker.remove())
       noDataLabels.current = []
+      rainPopup.current?.remove()
+      rainPopup.current = null
       instance.remove()
       map.current = null
       setMapReady(false)
@@ -434,6 +567,71 @@ export default function RiskMap() {
     })
   }, [from, to, mapReady])
 
+  // Live watched zones are shown as status-coloured markers only; contract
+  // sample rainfall and threshold values are intentionally never rendered.
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady) return
+
+    zoneMarkers.current.forEach((marker) => marker.remove())
+    zoneMarkers.current = []
+    if (!zones) return
+
+    zones.forEach((zone) => {
+      const element = document.createElement('button')
+      element.type = 'button'
+      element.className = `zone-marker zone-marker-${zone.status.toLowerCase()}`
+      element.title = `${zone.name} — ${zone.status}`
+      element.setAttribute('aria-label', `${zone.name}, ${zone.status}`)
+      element.addEventListener('click', (event) => {
+        event.stopPropagation()
+        instance.flyTo({ center: [zone.lon, zone.lat], zoom: 12, duration: 800 })
+      })
+      zoneMarkers.current.push(
+        new Marker({ element, anchor: 'center' })
+          .setLngLat([zone.lon, zone.lat])
+          .addTo(instance),
+      )
+    })
+  }, [zones, mapReady])
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady) return
+
+    reportMarkers.current.forEach((marker) => marker.remove())
+    reportMarkers.current = []
+    if (!reports) return
+
+    reports.forEach((report) => {
+      const element = document.createElement('span')
+      element.className = `report-map-pin report-map-pin-${report.kind}`
+      element.textContent = REPORT_KIND_ICONS[report.kind]
+      element.title = `${REPORT_KIND_LABELS[report.kind]} near ${report.near_locality}`
+      element.setAttribute('aria-label', element.title)
+      reportMarkers.current.push(
+        new Marker({ element, anchor: 'bottom' })
+          .setLngLat([report.lon, report.lat])
+          .addTo(instance),
+      )
+    })
+  }, [reports, mapReady])
+  useEffect(() => {
+    if (!rainPoint) return
+
+    let active = true
+    getWeather({ lat: rainPoint.lat, lon: rainPoint.lon })
+      .then((response) => {
+        if (active) setWeather(response)
+      })
+      .catch(() => {
+        // Null weather keeps the card on its neutral waiting message.
+        if (active) setWeather(null)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [rainPoint])
   // Draw both routes, segment by segment, and fit the map to them.
   useEffect(() => {
     const instance = map.current
@@ -552,6 +750,41 @@ export default function RiskMap() {
     setLoading(false)
   }, [from, to])
 
+  const handleReportSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!reportPoint) return
+
+    setReportActionError(null)
+    try {
+      const report = await createReport({
+        lat: reportPoint.lat,
+        lon: reportPoint.lon,
+        kind: reportKind,
+        note: reportNote.trim(),
+        reporter_id: getOrCreateReporterId(),
+      })
+      setReports((current) => (current ? [report, ...current] : [report]))
+      setReportPoint(null)
+      setReportNote('')
+    } catch (requestError) {
+      setReportActionError(errorDetail(requestError))
+    }
+  }
+
+  const handleConfirmReport = async (reportId: string) => {
+    setReportActionError(null)
+    setConfirmingReportId(reportId)
+    try {
+      const updated = await confirmReport(reportId, getOrCreateReporterId())
+      setReports((current) =>
+        current?.map((report) => (report.id === updated.id ? updated : report)) ?? null,
+      )
+    } catch (requestError) {
+      setReportActionError(errorDetail(requestError))
+    } finally {
+      setConfirmingReportId(null)
+    }
+  }
   return (
     <div className="risk-map-wrapper">
       <RoutePanel
@@ -651,6 +884,191 @@ export default function RiskMap() {
           </div>
         </div>
       </div>
+
+      <section className="reports-panel" aria-labelledby="reports-heading">
+        <div className="reports-panel-heading">
+          <div>
+            <h4 id="reports-heading">Community reports</h4>
+            <p>Recent reports from the community</p>
+          </div>
+        </div>
+
+        {reportPoint && (
+          <form className="report-form" onSubmit={handleReportSubmit}>
+            <h5>Report a problem</h5>
+            <p>Selected map point: {reportPoint.lat.toFixed(5)}, {reportPoint.lon.toFixed(5)}</p>
+            <label>
+              Problem type
+              <select value={reportKind} onChange={(event) => setReportKind(event.target.value as ReportKind)}>
+                <option value="flooded">Flooded</option>
+                <option value="blocked">Blocked</option>
+                <option value="landslide">Landslide</option>
+              </select>
+            </label>
+            <label>
+              Note (optional)
+              <textarea value={reportNote} onChange={(event) => setReportNote(event.target.value)} rows={3} maxLength={500} />
+            </label>
+            {reportActionError && <p className="report-error" role="alert">{reportActionError}</p>}
+            <div className="report-form-actions">
+              <button type="submit">Submit report</button>
+              <button type="button" onClick={() => setReportPoint(null)}>Cancel</button>
+            </div>
+          </form>
+        )}
+
+        {reportActionError && !reportPoint && <p className="report-error" role="alert">{reportActionError}</p>}
+
+        {reports === null ? (
+          <p className="reports-waiting" role={reportListError === 'Waiting for live data' ? 'status' : 'alert'}>
+            {reportListError ?? 'Waiting for live data'}
+          </p>
+        ) : reports.length === 0 ? (
+          <p className="reports-waiting" role="status">No community reports available.</p>
+        ) : (
+          <ul className="reports-list">
+            {reports.map((report) => (
+              <li className="community-report" key={report.id}>
+                <div className="community-report-heading">
+                  <span className={`report-kind-badge report-kind-${report.kind}`}>
+                    {REPORT_KIND_ICONS[report.kind]} {REPORT_KIND_LABELS[report.kind]}
+                  </span>
+                  <span className={`trust-badge trust-${report.trust}`}>{report.trust}</span>
+                </div>
+                <p className="community-report-note">{report.note || 'No note provided.'}</p>
+                <p className="community-report-meta">
+                  {new Date(report.created_at).toLocaleString()} · Near {report.near_locality}
+                </p>
+                <p className="community-report-trust-reason">{report.trust_reason}</p>
+                <div className="community-report-footer">
+                  <span>{report.confirmations} confirmations</span>
+                  <button
+                    type="button"
+                    disabled={confirmingReportId === report.id}
+                    onClick={() => handleConfirmReport(report.id)}
+                  >
+                    {confirmingReportId === report.id ? 'Confirming…' : 'Confirm'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      {rainPoint && (
+        <section className="rain-card" aria-labelledby="rain-card-heading">
+          <div className="rain-card-heading">
+            <h4 id="rain-card-heading">Rain at selected point</h4>
+            <button type="button" onClick={() => setRainPoint(null)}>Close</button>
+          </div>
+          {!weather ? (
+            <p className="rain-waiting" role="status">Waiting for live data</p>
+          ) : (
+            <>
+              <div className="rain-reading-grid">
+                <div><span>Current rain</span><strong>{weather.current_mm_h} mm/h</strong></div>
+                <div><span>Last 72 hours</span><strong>{weather.last_72h_mm} mm</strong></div>
+              </div>
+              <p className="rain-forecast-label">Next 24 hours</p>
+              <div className="rain-chart" role="img" aria-label="Hourly rainfall forecast for the next 24 hours">
+                {weather.hourly.map((hour) => {
+                  const maximum = Math.max(...weather.hourly.map((item) => item.mm), 0)
+                  const height = maximum > 0 ? Math.max(4, (hour.mm / maximum) * 100) : 4
+                  return (
+                    <span
+                      key={hour.time}
+                      className="rain-bar"
+                      style={{ height: `${height}%` }}
+                      title={`${new Date(hour.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: ${hour.mm} mm`}
+                    />
+                  )
+                })}
+              </div>
+              <div className="rain-meta">
+                <span>As of {new Date(weather.as_of).toLocaleString()}</span>
+                <span>Source: {weather.source}</span>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+      <section className="zones-panel" aria-labelledby="zones-heading">
+        <div className="zones-panel-heading">
+          <div>
+            <h4 id="zones-heading">Watched zones</h4>
+            <p>Name, district and current status</p>
+          </div>
+          <div className="zones-status-legend" aria-label="Zone status colours">
+            <span><i className="zone-dot zone-dot-safe" /> SAFE</span>
+            <span><i className="zone-dot zone-dot-watch" /> WATCH</span>
+            <span><i className="zone-dot zone-dot-critical" /> CRITICAL</span>
+          </div>
+        </div>
+        {zones && zones.length > 0 && (
+          <div className="zones-search">
+            <label htmlFor="zones-search-input">Search zones</label>
+            <input
+              id="zones-search-input"
+              type="search"
+              value={zoneSearch}
+              onChange={(event) => setZoneSearch(event.target.value)}
+              placeholder="Search by zone or district"
+            />
+            <span className="zones-search-count">
+              {filteredZones?.length ?? 0} {filteredZones?.length === 1 ? 'zone' : 'zones'}
+            </span>
+          </div>
+        )}
+        {zones === null ? (
+          <p className="zones-waiting" role="status">Waiting for live data</p>
+        ) : zones.length === 0 ? (
+          <p className="zones-waiting" role="status">No watched zones available.</p>
+        ) : filteredZones?.length === 0 ? (
+          <p className="zones-waiting" role="status">No zones match your search.</p>
+        ) : (
+          <ul className="zones-list">
+            {filteredZones?.slice(0, showAllZones ? filteredZones.length : 4).map((zone) => (
+              <li key={zone.id}>
+                <button
+                  type="button"
+                  className="zone-row"
+                  onClick={() =>
+                    map.current?.flyTo({
+                      center: [zone.lon, zone.lat],
+                      zoom: 12,
+                      duration: 800,
+                    })
+                  }
+                >
+                  <i className={`zone-dot zone-dot-${zone.status.toLowerCase()}`} aria-hidden="true" />
+                  <span className="zone-location">
+                    <strong>{zone.name}</strong>
+                    <small>{zone.district}</small>
+                  </span>
+                  <strong className={`zone-status zone-status-${zone.status.toLowerCase()}`}>
+                    {zone.status}
+                  </strong>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {filteredZones && filteredZones.length > 4 && (
+          <button
+            type="button"
+            className="zones-toggle"
+            aria-expanded={showAllZones}
+            onClick={() => setShowAllZones((visible) => !visible)}
+          >
+            {showAllZones ? 'Show fewer zones' : `Show all ${filteredZones.length} zones`}
+          </button>
+        )}
+      </section>
     </div>
   )
 }
+
+
+
+
+
