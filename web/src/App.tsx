@@ -1,6 +1,7 @@
 
 import './App.css'
 import RiskMap from './components/RiskMap'
+import FloodGuidance from './components/FloodGuidance'
 
 function App() {
   return (
@@ -61,7 +62,9 @@ function App() {
         </div>
         <RiskMap />
       </section>
-
+      <section className="guidance-section">
+        <FloodGuidance status="WATCH" />
+      </section>
       <section className="warning-card">
         <div>
           <p className="eyebrow">SAFETY</p>
