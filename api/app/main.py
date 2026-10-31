@@ -6,6 +6,8 @@ Serves the endpoints described in contracts/. Implemented so far:
   GET /layers/road-risk   roads rated MODERATE or worse (GeoJSON)
   GET /layers/atlas       surveyed hazard atlas polygons (GeoJSON)
   GET /shelters, /hospitals, /localities   places from OpenStreetMap
+  GET /weather            live rainfall for a point (Open-Meteo)
+  GET /zones              watched places and their rain status
 
 Data sources: the road graph built by pipeline/build_graph.py from
 OpenStreetMap (Geofabrik India central zone, ODbL), with risk classes from
@@ -25,6 +27,8 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from app.graph import get_graph
 from app.routing import MAX_DETOUR, RoutingError, km_by_class, route, safest_weights, segments
+from app.weather import WeatherUnavailable, readings
+from app.zones import current as current_zones
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -149,6 +153,30 @@ def places_file(name):
         raise RoutingError("not_found", f"The {name} list has not been built yet.", 404)
     return FileResponse(path, media_type="application/json",
                         headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/weather")
+def get_weather(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    replay: str | None = Query(None, description="YYYY-MM-DD; not implemented yet"),
+):
+    if replay:
+        raise RoutingError("not_ready", "Replay mode is not implemented yet.", 501)
+    try:
+        return readings([(lat, lon)])[0]
+    except WeatherUnavailable as exc:
+        raise RoutingError("weather_unavailable", str(exc), 503)
+
+
+@app.get("/zones")
+def get_zones(replay: str | None = Query(None, description="YYYY-MM-DD; not implemented yet")):
+    if replay:
+        raise RoutingError("not_ready", "Replay mode is not implemented yet.", 501)
+    try:
+        return current_zones()
+    except WeatherUnavailable as exc:
+        raise RoutingError("weather_unavailable", str(exc), 503)
 
 
 @app.get("/shelters")
