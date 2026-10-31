@@ -122,3 +122,16 @@ def test_a_deploy_serves_the_stored_gzip_without_compressing_again(monkeypatch):
     # the stored file really is the layer compressed once, not twice
     with open(os.path.join(packaged, "road_risk.geojson.gz"), "rb") as fh:
         assert gzip.decompress(fh.read()) == plain.content
+
+
+def test_the_root_says_where_to_start():
+    body = client.get("/").json()
+    assert body["health"] == "/health" and body["docs"] == "/docs"
+
+
+def test_an_unknown_address_or_method_uses_the_error_shape():
+    unknown = client.get("/no/such/thing")
+    assert (unknown.status_code, unknown.json()["error"]) == (404, "not_found")
+    assert unknown.json()["detail"]
+    wrong = client.post("/health")
+    assert (wrong.status_code, wrong.json()["error"]) == (405, "method_not_allowed")

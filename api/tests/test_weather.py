@@ -99,3 +99,13 @@ def test_a_replay_date_that_cannot_work_says_why():
         assert response.status_code == 400, bad
         assert response.json()["error"] == "bad_replay"
         assert response.json()["detail"]
+
+
+def test_the_forecast_always_reaches_24_hours_ahead_whatever_the_time_of_day():
+    # Open-Meteo counts "today" in UTC, so the worst moment for a short series is
+    # just after midnight IST. A series built the way the API asks for it, taken
+    # at 00:00 IST, must still leave 24 hours after "now".
+    today = datetime.datetime.now(weather.IST).date() - datetime.timedelta(days=1)  # UTC "today" at 00:00 IST
+    last = datetime.datetime.combine(today, datetime.time(23)) + datetime.timedelta(days=weather.FORECAST_DAYS - 1)
+    at_midnight = datetime.datetime.combine(today + datetime.timedelta(days=1), datetime.time(0))
+    assert (last - at_midnight) >= datetime.timedelta(hours=weather.FORECAST_HOURS)
