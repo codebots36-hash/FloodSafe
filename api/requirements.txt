@@ -1,8 +1,6 @@
-fastapi
-uvicorn[standard]
-numpy
-scipy
-requests
-psycopg[binary]
-pywebpush
-python-dotenv
+fastapi==0.162.0
+pydantic==2.14.2
+uvicorn[standard]==0.54.0
+numpy==2.5.4
+scipy==1.18.1
+requests==2.34.2
