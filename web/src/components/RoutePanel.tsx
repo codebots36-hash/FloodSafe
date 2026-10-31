@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { RouteFailure, RouteMode, RouteResponse } from '../api'
 import {
   NO_DATA_COLOUR,
@@ -22,6 +23,26 @@ interface RoutePanelProps {
   onSelectTo: (value: string) => void
   onHover: (mode: RouteMode | null) => void
   onSubmit: () => void
+  /** "YYYY-MM-DDTHH:MM" in India time, or '' to leave now (on a replay, at the day's worst rain). */
+  depart: string
+  onDepartChange: (value: string) => void
+  replay: string | null
+}
+
+const pad = (n: number) => String(n).padStart(2, '0')
+
+/** A Date as "YYYY-MM-DDTHH:MM" in India time, for a datetime-local field. */
+function istLocal(date: Date) {
+  const ist = new Date(date.getTime() + 330 * 60_000)
+  return `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth() + 1)}-${pad(ist.getUTCDate())}T${pad(ist.getUTCHours())}:${pad(ist.getUTCMinutes())}`
+}
+
+/** The wettest forecast hour on a route, for the card. */
+function wettest(route: RouteResponse) {
+  const values = route.segments
+    .map((segment) => segment.forecast_rain_mm)
+    .filter((value): value is number => value !== null)
+  return values.length ? Math.max(...values) : null
 }
 
 const CARD_ORDER: RouteMode[] = ['safest', 'fastest']
@@ -102,6 +123,12 @@ function RouteCard({
               <span>Driving time</span>
               <strong>{Math.round(route.duration_min)} min</strong>
             </div>
+            {wettest(route) !== null && (
+              <div>
+                <span>Wettest hour on the way</span>
+                <strong>{wettest(route)} mm</strong>
+              </div>
+            )}
           </div>
 
           <table className="route-km-table">
@@ -180,8 +207,13 @@ export default function RoutePanel({
   onSelectTo,
   onHover,
   onSubmit,
+  depart,
+  onDepartChange,
+  replay,
 }: RoutePanelProps) {
   const hasResult = Boolean(routes.safest || routes.fastest)
+  // The live departure window, fixed when the panel opens.
+  const [openedAt] = useState(() => Date.now())
 
   // One scale for both cards so the bars can be compared across them.
   const maxKm = Math.max(
@@ -242,6 +274,25 @@ export default function RoutePanel({
           </select>
         </label>
       </div>
+
+      <label className="route-depart">
+        <span>{replay ? `Leave on ${replay} at` : 'Leave'}</span>
+        <input
+          type="datetime-local"
+          value={depart}
+          min={replay ? `${replay}T00:00` : istLocal(new Date(openedAt))}
+          max={replay ? `${replay}T23:59` : istLocal(new Date(openedAt + 47 * 3_600_000))}
+          onChange={(event) => onDepartChange(event.target.value)}
+        />
+        {depart && (
+          <button type="button" onClick={() => onDepartChange('')}>
+            {replay ? 'Worst hour' : 'Now'}
+          </button>
+        )}
+        <small>
+          Each stretch is judged on the rain at the hour you reach it (India time).
+        </small>
+      </label>
 
       <div className="route-panel-actions">
         <button

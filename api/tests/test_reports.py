@@ -152,7 +152,7 @@ def test_control_characters_are_stripped_from_a_note():
     assert body["note"] == "water  over the road"
 
 
-def test_a_report_marks_the_route_it_lies_on_without_changing_it():
+def test_a_report_marks_the_fastest_route_without_changing_it():
     route = client.get(f"/route?from={RISHIKESH}&to={DEHRADUN}").json()
     assert all(s["report_id"] is None for s in route["segments"])
 
@@ -162,7 +162,7 @@ def test_a_report_marks_the_route_it_lies_on_without_changing_it():
     again = client.get(f"/route?from={RISHIKESH}&to={DEHRADUN}").json()
     assert [s["report_id"] for s in again["segments"]].count(report["id"]) == 1
     assert any("1 community report lies on this route (0 verified)" in n for n in again["notes"])
-    assert again["distance_km"] == route["distance_km"]  # a report never moves a route
+    assert again["distance_km"] == route["distance_km"]  # Fastest is never moved by a report
     assert again["geometry"] == route["geometry"]
 
 
@@ -173,3 +173,27 @@ def test_a_report_far_from_the_route_is_not_marked():
     route = client.get(f"/route?from={RISHIKESH}&to={DEHRADUN}").json()
     assert all(s["report_id"] is None for s in route["segments"])
     assert not any("community report" in n for n in route["notes"])
+
+
+def test_rain_around_a_flooded_road_verifies_it(monkeypatch):
+    monkeypatch.setattr(reports, "rain_near", lambda lat, lon: 6.4)
+    flooded = post().json()
+    assert flooded["trust"] == "verified"
+    assert flooded["trust_reason"] == "6.4 mm of rain fell around it in the 72 hours before it was posted"
+    blocked = post(reporter="anon-bbbbbbbb", kind="blocked").json()
+    assert blocked["trust"] == "unverified"  # rain says nothing about a fallen tree
+
+
+def test_safest_steers_around_a_verified_report():
+    before = client.get(f"/route?from={RISHIKESH}&to={DEHRADUN}&mode=safest").json()
+    line = before["geometry"]["coordinates"]
+    lon, lat = line[len(line) // 2]
+    report = post(point=(lat, lon), kind="blocked").json()
+    # Unverified, the road only costs 20x more, which a short stretch with no
+    # nearby way round can still be worth; verified all but blocks it.
+    confirm(report["id"], "anon-cccccccc")
+    confirm(report["id"], "anon-dddddddd")
+
+    after = client.get(f"/route?from={RISHIKESH}&to={DEHRADUN}&mode=safest").json()
+    assert after["geometry"] != before["geometry"]
+    assert report["id"] not in [s["report_id"] for s in after["segments"]]

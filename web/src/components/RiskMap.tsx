@@ -35,6 +35,7 @@ import {
   type WeatherResponse,
 } from '../api'
 import { routeVerdict } from '../routeVerdict'
+import { useSettings } from '../settings'
 import RoutePanel from './RoutePanel'
 import './Zones.css'
 import {
@@ -336,7 +337,20 @@ function reportPopup(report: CommunityReport) {
   ].filter((part) => part !== ''))
 }
 
+const ENDPOINTS_KEY = 'floodsafe-last-trip'
+
+/** The last trip's ends, so an offline reload can ask for the cached route again. */
+function savedEndpoints(): { from: Endpoint | null; to: Endpoint | null } {
+  try {
+    return { from: null, to: null, ...JSON.parse(localStorage.getItem(ENDPOINTS_KEY) ?? '{}') }
+  } catch {
+    return { from: null, to: null }
+  }
+}
+
 export default function RiskMap() {
+  const { replay } = useSettings()
+  const [depart, setDepart] = useState('')
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
   const rainPopup = useRef<Popup | null>(null)
@@ -393,8 +407,8 @@ export default function RiskMap() {
   // Read when the layers are added, so a toggle flipped before then sticks.
   const layerVisibility = useRef({ atlas: true, roadRisk: !IS_PHONE })
 
-  const [from, setFrom] = useState<Endpoint | null>(null)
-  const [to, setTo] = useState<Endpoint | null>(null)
+  const [from, setFrom] = useState<Endpoint | null>(() => savedEndpoints().from)
+  const [to, setTo] = useState<Endpoint | null>(() => savedEndpoints().to)
   const [nextClickSets, setNextClickSets] = useState<'from' | 'to'>('from')
   const [routes, setRoutes] = useState<Record<RouteMode, RouteResponse | null>>({
     safest: null,
@@ -411,7 +425,7 @@ export default function RiskMap() {
 
   useEffect(() => {
     let active = true
-    getZones()
+    getZones(replay)
       .then((response) => {
         if (active) setZones(response.zones)
       })
@@ -423,7 +437,7 @@ export default function RiskMap() {
     return () => {
       active = false
     }
-  }, [])
+  }, [replay])
   useEffect(() => {
     if (!mapContainer.current || map.current) return
 
@@ -709,7 +723,7 @@ export default function RiskMap() {
     if (!rainPoint) return
 
     let active = true
-    getWeather({ lat: rainPoint.lat, lon: rainPoint.lon })
+    getWeather({ lat: rainPoint.lat, lon: rainPoint.lon }, replay)
       .then((response) => {
         if (active) setWeather(response)
       })
@@ -721,7 +735,7 @@ export default function RiskMap() {
     return () => {
       active = false
     }
-  }, [rainPoint])
+  }, [rainPoint, replay])
   // Draw both routes, segment by segment, and fit the map to them.
   useEffect(() => {
     const instance = map.current
@@ -1002,9 +1016,15 @@ export default function RiskMap() {
     setFailures([])
     setHovered(null)
 
+    try {
+      localStorage.setItem(ENDPOINTS_KEY, JSON.stringify({ from, to }))
+    } catch {
+      // Remembering the trip is optional.
+    }
     const comparison = await getRouteComparison(
       { lat: from.lat, lon: from.lon },
       { lat: to.lat, lon: to.lon },
+      { depart: depart || null, replay },
     )
 
     setRoutes({ safest: comparison.safest, fastest: comparison.fastest })
@@ -1014,7 +1034,7 @@ export default function RiskMap() {
       setFailures(comparison.failures)
     }
     setLoading(false)
-  }, [from, to])
+  }, [from, to, depart, replay])
 
   const handleReportSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1118,6 +1138,9 @@ export default function RiskMap() {
         onSelectTo={(value) => selectEndpoint(value, setTo)}
         onHover={setHovered}
         onSubmit={handleSubmit}
+        depart={depart}
+        onDepartChange={setDepart}
+        replay={replay}
       />
 
       <div className="risk-map-stage" ref={stageRef}>

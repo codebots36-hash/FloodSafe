@@ -73,7 +73,7 @@ def test_an_unknown_layer_is_404():
     assert response.json()["error"] == "not_found"
 
 
-def test_replaying_a_date_does_not_move_a_route():
+def test_replaying_a_date_does_not_move_a_fastest_route():
     body = client.get(f"/route?from={RISHIKESH}&to={UTTARKASHI}&replay=2013-06-17").json()
     assert body["replay"] == "2013-06-17"
     assert any("2013-06-17" in note for note in body["notes"])

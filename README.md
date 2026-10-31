@@ -13,8 +13,11 @@ FloodSafe is flood-aware navigation for Uttarakhand, India. It routes people aro
 1. **Risk map.** A Flash Flood Potential Index (Smith 2003) is computed for the whole state at 30 m from slope, soil, land cover and forest density. Where the state hazard atlas covers a place, its surveyed flood zones are used instead and marked `surveyed`; everywhere else the class is `modelled`.
 2. **Road risk.** Every road segment in OpenStreetMap is sampled about every 30 m and takes the worst class along it, plus a landslide-prone flag.
 3. **Routing.** Fastest minimises travel time. Safest minimises travel time multiplied by a risk penalty per segment (see `api/app/routing.py`); the penalties are a modelling choice, not an official rule.
-4. **Zones.** 200 watched places turn WATCH or CRITICAL when live rain reaches depths calibrated on 24 monsoons of rainfall against recorded floods.
-5. **Replay.** `?replay=YYYY-MM-DD` re-runs rain and zones for a past day, for example 17 June 2013.
+4. **Forecast-timed routing.** Safest judges each road on the rain at the hour you would reach it (`depart`): a risky road costs 2x more where its nearest zone is WATCH then, 4x at CRITICAL. Each stretch of the answer carries that hour's rain.
+5. **Zones.** 200 watched places turn WATCH or CRITICAL when live rain reaches depths calibrated on 24 monsoons of rainfall against recorded floods. A phone can subscribe to a push alert when its zone turns CRITICAL.
+6. **Reports.** Community reports are verified by two other devices or by 2.5 mm of rain around them in the 72 hours before. Safest makes roads near an unverified report cost 20x more and all but blocks them near a verified one.
+7. **Replay.** `?replay=YYYY-MM-DD` re-runs rain, zones and routing on what actually fell on a past day. The rain for 16 and 17 June 2013 (Kedarnath) and 5 August 2025 (Dharali) is kept in `api/data/weather_history/`, so those replay without a network.
+8. **Official warnings** come from NDMA SACHET as issued, apart from FloodSafe's own status. **SOS** texts family a map link; sharing it with the responder dashboard is opt-in. The app installs as a PWA and keeps the last route, shelters and viewed map tiles for use without signal.
 
 ## Run it
 
@@ -31,6 +34,12 @@ Tests: `pip install -r requirements-dev.txt`, then `python -m pytest -q` from `a
 The API needs the road graph in `pipeline/out/graph/` (or `api/data/graph/`, or the folder named by `GRAPH_DIR`), built by the pipeline below. Endpoints and their exact shapes are in [contracts/](contracts/README.md).
 
 Rain on a shared host: Open-Meteo's free quota is per address and a shared host is usually over it (Render got HTTP 429), so live rain can be fetched elsewhere and sent to the API. Set `RAINFALL_RELAY_SECRET` on the API, then run `RAINFALL_RELAY_SECRET=... python pipeline/relay_rainfall.py <api address> --every 3600` from a laptop, or let `.github/workflows/rainfall-relay.yml` do it hourly. The API marks those readings `relay` and the time they were taken. The relay is off unless the secret is set.
+
+Optional settings on the API (see `api/.env.example`):
+
+- `DATABASE_URL`: Postgres (e.g. Neon) for reports, push subscriptions and SOS pings. Without it they go in a SQLite file, which a free host's disk loses on every restart. Tests run on SQLite, or on an empty Postgres named by `TEST_DATABASE_URL`.
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`: push alerts. `python -m app.push` from `api/` prints a new pair.
+- `TEXTBEE_API_KEY`, `TEXTBEE_DEVICE_ID`: SOS texts sent by the server. Without them the app opens the phone's SMS app instead.
 
 Web app: in `web/`, create `.env.local` containing `VITE_API_URL=` followed by the API's address (no trailing slash), then `npm install` and `npm run dev`. Restart the dev server after changing it.
 
@@ -64,6 +73,7 @@ Everything is real, published data. Nothing is simulated.
 | Recorded floods | India Flood Inventory v3, Saharia et al. 2021, Zenodo 10.5281/zenodo.4742142 | CC BY-NC 4.0, non-commercial use |
 | Historic rain (calibration, replay) | ERA5 reanalysis via the Open-Meteo archive API | Copernicus licence, CC BY 4.0 |
 | Live rain | Open-Meteo forecast API | CC BY 4.0, free for non-commercial use. "Weather data by Open-Meteo.com" |
+| Official warnings | NDMA SACHET CAP feed (IMD, CWC, Uttarakhand SDMA) | public domain, shown as issued |
 
 ## What the numbers do and do not say
 
@@ -71,4 +81,5 @@ Everything is real, published data. Nothing is simulated.
 - **Per-zone adjustment.** Shifting each zone's depths by hazard class and soil group is a modelling choice, not a fitted result.
 - **Atlas accuracy.** The atlas map is embedded at about 100 dpi, so one source pixel is about 400 m on the ground. Its zones are good to a few kilometres.
 - **Landslide index.** A transparent index of slope, relief and land cover, with weights that were not tuned. Against the NASA catalogue it separates events from random points inside the state no better than chance (ROC AUC 0.49), and from random road points moderately (0.71). Treat the landslide flag as a hint, not a prediction.
+- **Forecast-timed routing** reads each road's rain from the nearest of the 200 zones within 20 km, and times it by the Fastest arrival from the start, which is earlier than Safest's own when Safest detours. Replay uses the rain that fell (ERA5), not the forecast issued that day.
 - **Roads outside Uttarakhand** have no risk class and are shown as "no data", never as safe.

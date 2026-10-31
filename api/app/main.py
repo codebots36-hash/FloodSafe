@@ -9,6 +9,10 @@ Serves the endpoints described in contracts/. Implemented so far:
   GET /weather            live rainfall for a point (Open-Meteo)
   GET /zones              watched places and their rain status
   GET /reports, POST /reports, POST /reports/{id}/confirm   community reports
+  GET /warnings           official alerts from NDMA SACHET
+  GET /push/public-key, POST /push/subscribe   push alerts when a zone turns CRITICAL
+  POST /sos               an SOS text with the location
+  GET /responder/summary  reports, zones not SAFE, shelters, SOS pings
 
 Data sources: the road graph built by pipeline/build_graph.py from
 OpenStreetMap (Geofabrik India central zone, ODbL), with risk classes from
@@ -18,11 +22,14 @@ Run from api/: uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
 
 import hmac
+import json
 import os
-import sqlite3
+import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
 from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,9 +38,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app import reports
+from app import forecast, push, reports, sachet, sos
+from app.forecast import parse_depart
 from app.graph import get_graph
-from app.routing import MAX_DETOUR, RoutingError, km_by_class, route, safest_weights, segments
+from app.routing import (MAX_DETOUR, RoutingError, km_by_class, rain_factor, route, safest_weights,
+                         segments)
+from app.store import DBError
 from app.weather import WeatherUnavailable, parse_day, readings, replayed, store
 from app.zones import current as current_zones
 
@@ -116,13 +126,39 @@ def health():
     return {"status": "ok", "nodes": graph.n_nodes, "edges": int(len(graph.edge_u))}
 
 
+MAX_DEPART_AHEAD = timedelta(hours=48)  # the forecast reaches about this far
+
+
+def departure(text, day, peak):
+    """When the trip starts. Live: now, or a time up to MAX_DEPART_AHEAD ahead.
+    On a replay: a time on that day, by default its worst hour of rain."""
+    now = datetime.now(IST)
+    try:
+        when = parse_depart(text) if text else None
+    except ValueError as exc:
+        raise RoutingError("bad_depart", str(exc))
+    if day:
+        if when is None:
+            return peak or datetime.combine(day, datetime.min.time(), IST).replace(hour=12)
+        if when.astimezone(IST).date() != day:
+            raise RoutingError("bad_depart", f"On a replay of {day.isoformat()}, depart must be on that day.")
+        return when
+    if when is None:
+        return now
+    if when < now - timedelta(hours=1):
+        raise RoutingError("bad_depart", "depart is in the past; use a replay date for a past trip.")
+    if when > now + MAX_DEPART_AHEAD:
+        raise RoutingError("bad_depart", "The rain forecast only reaches 48 hours ahead.")
+    return when
+
+
 @app.get("/route")
 def get_route(
     from_: str = Query(..., alias="from", description="lat,lon"),
     to: str = Query(..., description="lat,lon"),
     mode: str = Query("fastest", pattern="^(fastest|safest)$"),
     depart: str | None = Query(None, description="ISO 8601; defaults to now"),
-    replay: str | None = Query(None, description="YYYY-MM-DD; not implemented yet"),
+    replay: str | None = Query(None, description="YYYY-MM-DD; the rain that fell that day"),
 ):
     day = replay_day(replay)
     graph = get_graph()
@@ -131,26 +167,61 @@ def get_route(
 
     start, end = parse_point(from_, "from"), parse_point(to, "to")
     notes = []
+    try:
+        sky, peak = forecast.load(day)
+    except WeatherUnavailable as exc:
+        print(f"[route] no rain for routing: {exc}", flush=True)
+        sky, peak = None, None
+        notes.append("Rain could not be read, so this route does not take it into account.")
+    leave = departure(depart, day, peak)
+
     result = route(graph, start, end)
+    zone = forecast.edge_zones(graph) if sky else None
     if mode == "safest":
+        extra = None
+        if sky:
+            # Each road is judged on the rain at the hour you could first reach
+            # it, which is its Fastest arrival time from the start.
+            # ponytail: Fastest arrival stands in for Safest's own (later) one;
+            # a time-dependent Dijkstra would be exact.
+            arrive = leave.timestamp() + result["costs"][np.asarray(graph.edge_u)]
+            extra = rain_factor(graph, sky.at(zone, arrive)[1])
+        if not day:  # reports are about now, so a replayed past date has none
+            try:
+                penalty = reports.penalties(graph, reports.active())
+            except DBError as exc:
+                print(f"[reports] could not read reports for routing: {exc}", flush=True)
+                penalty = None
+            if penalty is not None:
+                extra = penalty if extra is None else extra * penalty
         fastest_m = result["distance_m"]
-        result = route(graph, start, end, safest_weights(graph, "strict"))
+        result = route(graph, start, end, safest_weights(graph, "strict", extra))
         if result["distance_m"] > MAX_DETOUR * fastest_m:
-            result = route(graph, start, end, safest_weights(graph, "mild"))
+            result = route(graph, start, end, safest_weights(graph, "mild", extra))
             notes.append(f"Avoiding every risky road meant a route over {MAX_DETOUR} times "
                          "longer, so this one uses milder risk penalties.")
 
-    km, unscored_km = km_by_class(graph, result["edge_ids"])
-    segs = segments(graph, result["edge_ids"], result["bounds"])
+    edge_ids = result["edge_ids"]
+    rain_mm = None
+    if sky:
+        # The hour you reach each stretch along the route actually taken.
+        reach = leave.timestamp() + np.concatenate([[0.0], np.cumsum(graph.travel_s[edge_ids])[:-1]])
+        rain_mm, level = sky.at(zone[edge_ids], reach)
+        wet_km = round(float(np.asarray(graph.edge_len_m)[edge_ids][level > 0].sum()) / 1000, 1)
+        if wet_km:
+            notes.append(f"By the time you reach them, {wet_km} km of this route are in places "
+                         "at WATCH or CRITICAL for rain.")
+        if reach[-1] + graph.travel_s[edge_ids[-1]] > sky.end:
+            notes.append("The rain record does not reach the end of this trip.")
+    km, unscored_km = km_by_class(graph, edge_ids)
+    segs = segments(graph, edge_ids, result["bounds"], rain_mm)
     if day:
-        # Road risk comes from the terrain and the hazard atlas, neither of
-        # which changes with the date, so replaying one does not move a route.
-        notes.append(f"Replaying {day.isoformat()}. A road's risk class comes from its terrain "
-                     "and the hazard atlas, so it is the same on any date.")
-    else:  # reports are about now, so a replayed past date has none
+        notes.append(f"Replaying {day.isoformat()}: the rain is what actually fell that day "
+                     "(ERA5), read for the hour you reach each stretch.")
+    else:
         try:
             found, verified = reports.attach(result["coordinates"], segs)
-        except sqlite3.Error as exc:
+        except DBError as exc:
             print(f"[reports] could not read reports for a route: {exc}", flush=True)
             notes.append("Community reports could not be read, so none are shown on this route.")
         else:
@@ -168,7 +239,7 @@ def get_route(
 
     return {
         "mode": mode,
-        "depart": depart or datetime.now(IST).isoformat(timespec="seconds"),
+        "depart": leave.astimezone(IST).isoformat(timespec="seconds"),
         "replay": day.isoformat() if day else None,
         "distance_km": round(result["distance_m"] / 1000, 1),
         "duration_min": round(result["duration_s"] / 60),
@@ -246,15 +317,81 @@ def relay_weather(body: WeatherRelay, x_relay_secret: str | None = Header(None))
         raise RoutingError("not_configured", "The rainfall relay is not switched on here.", 503)
     if not hmac.compare_digest((x_relay_secret or "").encode(), secret.encode()):
         raise RoutingError("forbidden", "Wrong relay secret.", 403)
-    return {"ok": True, "kept": store(body.cells)}
+    kept = store(body.cells)
+    try:
+        notify_later(current_zones())  # fresh rain may have turned a zone CRITICAL
+    except WeatherUnavailable:
+        pass
+    return {"ok": True, "kept": kept}
+
+
+def notify_later(zones):
+    """Send push alerts off the request, so a slow push service never delays a page."""
+    def run():
+        try:
+            push.notify(zones)
+        except Exception as exc:  # a background thread has nobody else to tell
+            print(f"[push] notify failed: {exc}", flush=True)
+    threading.Thread(target=run, daemon=True).start()
 
 
 @app.get("/zones")
 def get_zones(replay: str | None = Query(None, description="YYYY-MM-DD; the rain that fell that day")):
     try:
-        return current_zones(replay_day(replay))
+        result = current_zones(replay_day(replay))
     except WeatherUnavailable as exc:
         raise RoutingError("weather_unavailable", str(exc), 503)
+    notify_later(result)
+    return result
+
+
+@app.get("/warnings")
+def get_warnings():
+    return sachet.warnings()
+
+
+@app.get("/push/public-key")
+def get_push_key():
+    return {"public_key": push.public_key()}
+
+
+@app.post("/push/subscribe")
+def post_push_subscribe(body: push.Subscribe):
+    with open(os.path.join(DATA_DIR, "zones.json"), encoding="utf-8") as fh:
+        zone_ids = {z["id"] for z in json.load(fh)["zones"]}
+    return push.subscribe(body, zone_ids)
+
+
+@app.post("/sos")
+def post_sos(body: sos.SosRequest, request: Request):
+    reports.check_ip(client_ip(request), time.time())
+    return sos.send(body)
+
+
+@app.get("/responder/summary")
+def get_responder_summary():
+    """One screen for a district control room. Each part is read on its own,
+    so one missing source never blanks the rest."""
+    now = datetime.now(IST)
+    try:
+        critical = [{"id": z["id"], "name": z["name"], "status": z["status"]}
+                    for z in current_zones()["zones"] if z["status"] != "SAFE"]
+    except WeatherUnavailable:
+        critical = None
+    try:
+        with open(os.path.join(DATA_DIR, "shelters.json"), encoding="utf-8") as fh:
+            shelters = len(json.load(fh)["items"])
+    except OSError:
+        shelters = None
+    return {
+        "as_of": now.isoformat(timespec="seconds"),
+        "reports_last_24h": len(reports.active()),
+        "critical_zones": critical,
+        "shelters_count": shelters,
+        "sos_pings": [{"lat": p["lat"], "lon": p["lon"],
+                       "time": datetime.fromtimestamp(p["created_ts"], IST).isoformat(timespec="seconds")}
+                      for p in sos.pings()],
+    }
 
 
 def client_ip(request: Request):

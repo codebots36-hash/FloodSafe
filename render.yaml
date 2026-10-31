@@ -13,3 +13,20 @@ services:
         value: 3.12.0
       - key: RAINFALL_RELAY_SECRET
         sync: false  # set in the Render dashboard; the same value as the GitHub secret
+      # Postgres (Neon) keeps reports, push subscriptions and SOS pings across
+      # restarts; without it they live in a SQLite file the free disk loses.
+      - key: DATABASE_URL
+        sync: false
+      # Push alerts: make a pair with `python -m app.push` from api/.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
+      # Optional: SOS texts sent by the server (textbee.dev). Without these the
+      # app opens the phone's own SMS app.
+      - key: TEXTBEE_API_KEY
+        sync: false
+      - key: TEXTBEE_DEVICE_ID
+        sync: false

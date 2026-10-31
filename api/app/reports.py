@@ -1,15 +1,21 @@
 """Community reports of flooded, blocked or landslide-hit roads.
 
 Input   POST /reports and POST /reports/{id}/confirm
-Output  reports in the shape of contracts/report.json, kept in SQLite
+Output  reports in the shape of contracts/report.json, kept in the database
+        (app/store.py: Postgres on a deploy, SQLite on a laptop)
 
-A report is "unverified" until two other devices have confirmed it, then
-"verified", and trust_reason says exactly that and no more. It does not say
-the road is flooded: nobody here has seen it. The reporter id is a random
-string the app invents, so anyone can invent three of them; the rule keeps
-out accidents, double taps and casual noise, not a determined liar. For that
-reason a report never changes a route's cost, it only marks the stretch it
-lies on (see attach).
+A report is "verified" once two other devices have confirmed it, or, for a
+flooded road or a landslide, when at least RAIN_TRUST_MM of rain fell around
+it in the 72 hours before it was posted (Open-Meteo, the ~11 km cell it lies
+in). Otherwise it is "unverified", and trust_reason says which rule applied
+and no more. Verified does not mean proven: nobody here has seen the road.
+
+Safest routing steers around reports (see penalties): roads within
+ROUTE_BUFFER_M of an unverified report cost UNVERIFIED_PENALTY times more,
+of a verified one VERIFIED_PENALTY times, which all but blocks them. The
+reporter id is a random string the app invents, so anyone can invent three
+of them; the rate limits keep out accidents and casual noise, not a
+determined liar, which is why an unverified report only slows a road.
 
 Reports older than ACTIVE_HOURS drop out of the list: a flooded road is a
 statement about now.
@@ -19,10 +25,8 @@ import json
 import os
 import re
 import secrets
-import sqlite3
 import time
 from collections import defaultdict, deque
-from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -32,10 +36,10 @@ from scipy.spatial import cKDTree
 
 from app.graph import M_PER_DEG_LAT, M_PER_DEG_LON
 from app.routing import MAX_SNAP_M, RoutingError
+from app.store import DATA, IntegrityError, db, schema
+from app.weather import WeatherUnavailable, readings
 
 IST = timezone(timedelta(hours=5, minutes=30))
-DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-DB_PATH = os.environ.get("REPORTS_DB") or os.path.join(DATA, "reports.db")
 
 KINDS = ("flooded", "blocked", "landslide")
 NOTE_MAX = 280
@@ -46,6 +50,11 @@ DUPLICATE_M = 100               # same device, same kind, this close and this so
 DUPLICATE_MIN = 10
 NEAR_LOCALITY_M = 5000
 ROUTE_BUFFER_M = 50             # a report this close to a route lies on it
+RAIN_TRUST_MM = 2.5             # 72 h rain around a flooded road / landslide that verifies it
+RAIN_KINDS = ("flooded", "landslide")
+UNVERIFIED_PENALTY = 20         # Safest cost multiplier on roads near a report
+VERIFIED_PENALTY = 1000
+CANDIDATE_M = 3000              # road nodes this close are checked against a report
 
 # Per hour. Reporter limits are counted in the database and survive a restart;
 # the per-IP one is memory only and is just there to blunt a flood.
@@ -55,26 +64,24 @@ MAX_CALLS_PER_IP = 60
 
 REPORTER_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
-SCHEMA = """
-PRAGMA journal_mode = WAL;
-CREATE TABLE IF NOT EXISTS reports (
+schema("""CREATE TABLE IF NOT EXISTS reports (
     id TEXT PRIMARY KEY,
-    lat REAL NOT NULL,
-    lon REAL NOT NULL,
+    lat DOUBLE PRECISION NOT NULL,
+    lon DOUBLE PRECISION NOT NULL,
     kind TEXT NOT NULL,
     note TEXT NOT NULL,
-    created_ts REAL NOT NULL,
+    created_ts DOUBLE PRECISION NOT NULL,
     reporter_id TEXT NOT NULL,
     near_locality TEXT
-);
-CREATE INDEX IF NOT EXISTS reports_ts ON reports (created_ts);
-CREATE TABLE IF NOT EXISTS confirmations (
+)""",
+       "ALTER TABLE reports ADD COLUMN rain_72h_mm DOUBLE PRECISION",
+       "CREATE INDEX IF NOT EXISTS reports_ts ON reports (created_ts)",
+       """CREATE TABLE IF NOT EXISTS confirmations (
     report_id TEXT NOT NULL REFERENCES reports (id),
     reporter_id TEXT NOT NULL,
-    created_ts REAL NOT NULL,
+    created_ts DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (report_id, reporter_id)
-);
-"""
+)""")
 
 
 class ReportCreate(BaseModel):
@@ -87,20 +94,6 @@ class ReportCreate(BaseModel):
 
 class ReportConfirm(BaseModel):
     reporter_id: str = Field(pattern=REPORTER_ID.pattern)
-
-
-@contextmanager
-def db():
-    """A connection that commits when the block ends and rolls back if it fails."""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    con = sqlite3.connect(DB_PATH, timeout=10)
-    con.row_factory = sqlite3.Row
-    try:
-        con.executescript(SCHEMA)
-        with con:
-            yield con
-    finally:
-        con.close()
 
 
 _hits = defaultdict(deque)
@@ -152,10 +145,22 @@ def nearest_locality(lat, lon):
     return names[index] if np.isfinite(gap) else None
 
 
+def rain_near(lat, lon):
+    """Rain in the 72 h to now around a point, or None if it cannot be read."""
+    try:
+        return readings([(lat, lon)])[0]["last_72h_mm"]
+    except WeatherUnavailable:
+        return None
+
+
 def shape(row, confirmations):
     """A database row as the contract's report."""
+    rain = row["rain_72h_mm"]
     if confirmations >= VERIFIED_AT:
         trust, reason = "verified", f"Confirmed from {confirmations} different devices"
+    elif row["kind"] in RAIN_KINDS and rain is not None and rain >= RAIN_TRUST_MM:
+        trust, reason = "verified", (f"{rain:g} mm of rain fell around it in the 72 hours "
+                                     "before it was posted")
     elif confirmations:
         trust, reason = "unverified", (f"Confirmed from {confirmations} other device; "
                                        f"{VERIFIED_AT} are needed to verify it")
@@ -201,21 +206,24 @@ def create(graph, body, ip):
         for row in recent:  # a double tap returns the first report instead of adding a second
             if (row["kind"] == body.kind and row["created_ts"] > now - DUPLICATE_MIN * 60
                     and metres(row["lat"], row["lon"], body.lat, body.lon) <= DUPLICATE_M):
-                n = con.execute("SELECT COUNT(*) FROM confirmations WHERE report_id = ?",
-                                (row["id"],)).fetchone()[0]
+                n = con.execute("SELECT COUNT(*) AS n FROM confirmations WHERE report_id = ?",
+                                (row["id"],)).fetchone()["n"]
                 return shape(row, n)
         if len(recent) >= MAX_REPORTS_PER_REPORTER:
             raise RoutingError("rate_limited", f"At most {MAX_REPORTS_PER_REPORTER} reports an hour "
                                "from one device.", 429)
 
         near = nearest_locality(body.lat, body.lon)
+        rain = rain_near(body.lat, body.lon) if body.kind in RAIN_KINDS else None
         for _ in range(5):
             report_id = "r_" + secrets.token_hex(3)
             try:
-                con.execute("INSERT INTO reports VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                            (report_id, body.lat, body.lon, body.kind, note, now, body.reporter_id, near))
+                con.execute("INSERT INTO reports (id, lat, lon, kind, note, created_ts, reporter_id, "
+                            "near_locality, rain_72h_mm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (report_id, body.lat, body.lon, body.kind, note, now, body.reporter_id,
+                             near, rain))
                 break
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 continue
         else:
             raise RoutingError("busy", "Could not save the report. Try again.", 503)
@@ -234,13 +242,15 @@ def confirm(report_id, reporter_id, ip):
                                "and can no longer be confirmed.", 410)
         if row["reporter_id"] == reporter_id:
             raise RoutingError("own_report", "You cannot confirm your own report.", 409)
-        made = con.execute("SELECT COUNT(*) FROM confirmations WHERE reporter_id = ? AND created_ts > ?",
-                           (reporter_id, now - 3600)).fetchone()[0]
+        made = con.execute("SELECT COUNT(*) AS n FROM confirmations WHERE reporter_id = ? "
+                           "AND created_ts > ?", (reporter_id, now - 3600)).fetchone()["n"]
         if made >= MAX_CONFIRMS_PER_REPORTER:
             raise RoutingError("rate_limited", "Too many confirmations from one device this hour.", 429)
         # a second confirmation from the same device is ignored, not counted twice
-        con.execute("INSERT OR IGNORE INTO confirmations VALUES (?, ?, ?)", (report_id, reporter_id, now))
-        n = con.execute("SELECT COUNT(*) FROM confirmations WHERE report_id = ?", (report_id,)).fetchone()[0]
+        con.execute("INSERT INTO confirmations VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+                    (report_id, reporter_id, now))
+        n = con.execute("SELECT COUNT(*) AS n FROM confirmations WHERE report_id = ?",
+                        (report_id,)).fetchone()["n"]
         return shape(row, n)
 
 
@@ -248,7 +258,7 @@ def attach(coordinates, segs):
     """Mark the route's segments that active reports lie on; returns (reports, verified).
 
     Sets each segment's report_id to the most trusted, then newest, report
-    within ROUTE_BUFFER_M of it. Only marks: it never changes the route.
+    within ROUTE_BUFFER_M of it. Steering round reports is penalties' job.
     """
     items = active()
     if not items or len(coordinates) < 2:
@@ -279,3 +289,35 @@ def attach(coordinates, segs):
     for seg, (_, report_id) in best.items():
         segs[seg]["report_id"] = report_id
     return found, verified
+
+
+def _gap_m(p, line):
+    """Shortest distance in metres from point p (x, y metres) to a polyline of [lon, lat]."""
+    xy = np.asarray(line, dtype=np.float64) * [M_PER_DEG_LON, M_PER_DEG_LAT]
+    if len(xy) == 1:
+        return float(np.hypot(*(xy[0] - p)))
+    a, ab = xy[:-1], xy[1:] - xy[:-1]
+    t = np.clip(((p - a) * ab).sum(axis=1) / np.maximum((ab ** 2).sum(axis=1), 1e-9), 0, 1)
+    return float(np.hypot(*(a + t[:, None] * ab - p).T).min())
+
+
+def penalties(graph, items):
+    """Safest cost multiplier per directed edge for these reports, or None if there are none.
+
+    An edge is near a report when its line passes within ROUTE_BUFFER_M. Only
+    edges leaving a road node within CANDIDATE_M are checked; both directions
+    of a two-way road leave such a node, so both are caught.
+    """
+    # ponytail: an edge longer than 2 x CANDIDATE_M whose ends are both far from
+    # the report is missed; index edge bounding boxes if that ever matters.
+    if not items:
+        return None
+    factor = np.ones(len(graph.edge_u), dtype=np.float64)
+    for item in items:
+        p = np.array([item["lon"] * M_PER_DEG_LON, item["lat"] * M_PER_DEG_LAT])
+        weight = VERIFIED_PENALTY if item["trust"] == "verified" else UNVERIFIED_PENALTY
+        for node in graph.tree.query_ball_point(p, CANDIDATE_M):
+            for edge_id in graph.csr_edge_id[graph.csr_indptr[node]:graph.csr_indptr[node + 1]]:
+                if factor[edge_id] < weight and _gap_m(p, graph.edge_coords(edge_id)) <= ROUTE_BUFFER_M:
+                    factor[edge_id] = weight
+    return factor

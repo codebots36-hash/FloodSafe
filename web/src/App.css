@@ -1600,3 +1600,196 @@ footer {
   position: fixed; z-index: 50; left: 50%; bottom: 24px; transform: translateX(-50%);
   margin: 0; padding: 10px 18px; border-radius: 999px; background: #2e7d32; color: #fff; font-weight: 700;
 }
+
+/* ---- Live screens: replay, warnings, guidance, responder, SOS ---------- */
+
+.replay-banner {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  padding: 8px 16px;
+  background: #5b2a86;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+}
+
+.replay-banner button,
+.route-depart button {
+  margin-left: 8px;
+  padding: 4px 10px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.utility-bar button[aria-pressed='true'] {
+  font-weight: 800;
+  text-decoration: underline;
+}
+
+.warning-unavailable {
+  padding: 8px 10px;
+  border-left: 4px solid #d99a12;
+  background: #fff7e0;
+}
+
+.official-alerts {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.official-alert {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #e8b4ad;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.official-alert p {
+  margin: 0;
+}
+
+.official-alert-severity {
+  justify-self: start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #7d231a;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.guidance-zone select,
+.notification-options select {
+  max-width: 100%;
+  padding: 6px;
+  font: inherit;
+}
+
+.guidance-rain {
+  width: 100%;
+  margin: 8px 0;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.guidance-rain th,
+.guidance-rain td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #dbe3e8;
+  text-align: left;
+}
+
+.guidance-facts {
+  font-size: 13px;
+}
+
+.responder-map {
+  height: 280px;
+  margin: 12px 0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.responder-zones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.responder-zones .zone-dot {
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.replay-events,
+.replay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.replay-events button {
+  padding: 6px 10px;
+  border: 1px solid #dbe3e8;
+  border-radius: 4px;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.replay-events button.is-selected {
+  border-color: #5b2a86;
+  background: #f1e9fa;
+  font-weight: 700;
+}
+
+.route-depart {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.route-depart small {
+  flex-basis: 100%;
+  color: #5b6b78;
+}
+
+.sos-share {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.sos-hold {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border: 0;
+  border-radius: 6px;
+  background: #c92727;
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.sos-hold small {
+  font-weight: 500;
+}
+
+/* The bar fills over the 2 s hold. */
+.sos-hold::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 4px;
+  background: #fff;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.sos-hold.is-holding::after {
+  transform: scaleX(1);
+  transition: transform 2s linear;
+}
