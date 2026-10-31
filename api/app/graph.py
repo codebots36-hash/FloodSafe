@@ -19,9 +19,12 @@ from scipy.sparse import csr_matrix
 from scipy.spatial import cKDTree
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# A fresh local build wins over the committed copy, so rebuilding the data
+# never silently serves the old one; a deploy has no pipeline/out and falls
+# through to the copy made by pipeline/package_api_data.py.
 DEFAULT_DIRS = [
-    os.path.join(HERE, "data", "graph"),  # what a deploy unpacks
     os.path.join(os.path.dirname(HERE), "pipeline", "out", "graph"),  # local build
+    os.path.join(HERE, "data", "graph"),  # what a deploy runs on
 ]
 
 # Uttarakhand sits near 30 N. Scaling degrees to metres about that latitude

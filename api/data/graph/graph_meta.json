@@ -1,0 +1,14 @@
+{
+  "source_file": "uk_roads.osm.pbf",
+  "source": "OpenStreetMap via Geofabrik India central zone (ODbL)",
+  "built_at": "2026-10-31T14:21:37+0530",
+  "build_seconds": 20.7,
+  "raw_nodes": 3093310,
+  "raw_edges": 3183391,
+  "nodes": 416266,
+  "undirected_edges": 506592,
+  "directed_edges": 952960,
+  "geometry_points": 3645707,
+  "components_including_isolated_nodes": 2675649,
+  "geometry_layout": "edge_geom_offsets/edge_geom_lonlat are indexed by UNDIRECTED edge. A directed edge points at its span via edge_geom_id, and edge_reversed says whether to read that span backwards."
+}
