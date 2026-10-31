@@ -1,6 +1,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  type ExpressionSpecification,
   type GeoJSONSource,
   LngLatBounds,
   Map as MapLibreMap,
@@ -11,7 +12,13 @@ import {
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection, LineString } from 'geojson'
-import { getRoute, type RouteMode, type RouteResponse } from '../api'
+import {
+  getRouteComparison,
+  type RouteFailure,
+  type RouteMode,
+  type RouteResponse,
+} from '../api'
+import { routeVerdict } from '../routeVerdict'
 import RoutePanel from './RoutePanel'
 import {
   NO_DATA_COLOUR,
@@ -26,10 +33,27 @@ setWorkerUrl(workerUrl)
 const atlasUrl = '/data/layer_atlas.geojson'
 const roadRiskUrl = '/data/layer_road_risk.geojson'
 
-const ROUTE_SOURCE = 'route-segments'
-const ROUTE_LAYER = 'route-segments-line'
-const ROUTE_NODATA_LAYER = 'route-segments-nodata'
 const NO_DATA = 'NO_DATA'
+
+/** Drawn bottom to top: Fastest sits underneath Safest. */
+const ROUTE_MODES: RouteMode[] = ['fastest', 'safest']
+
+const routeIds = (mode: RouteMode) => ({
+  source: `route-${mode}`,
+  line: `route-${mode}-line`,
+  noData: `route-${mode}-nodata`,
+})
+
+/**
+ * Safest is the solid main line; Fastest is thinner and see-through so it
+ * reads as the alternative. Hovering a card swaps in the highlight values.
+ */
+const ROUTE_LOOK: Record<RouteMode, { width: number; opacity: number }> = {
+  safest: { width: 6, opacity: 1 },
+  fastest: { width: 4, opacity: 0.45 },
+}
+const HIGHLIGHT_LOOK = { width: 8, opacity: 1 }
+const DIMMED_OPACITY = 0.2
 
 type SegmentFeature = Feature<LineString, { risk: string }>
 
@@ -92,10 +116,67 @@ function noDataKmOf(route: RouteResponse) {
     )
 }
 
-/** Hazard overlays load after the first route, so keep the route on top. */
+/**
+ * Hazard overlays load after the first route, so keep the routes on top —
+ * and keep Fastest under Safest while doing it.
+ */
 function bringRouteToFront(instance: MapLibreMap) {
-  ;[ROUTE_NODATA_LAYER, ROUTE_LAYER].forEach((layerId) => {
-    if (instance.getLayer(layerId)) instance.moveLayer(layerId)
+  ROUTE_MODES.forEach((mode) => {
+    const ids = routeIds(mode)
+    ;[ids.noData, ids.line].forEach((layerId) => {
+      if (instance.getLayer(layerId)) instance.moveLayer(layerId)
+    })
+  })
+}
+
+const RISK_COLOUR_EXPRESSION: ExpressionSpecification = [
+  'match',
+  ['get', 'risk'],
+  'LOW',
+  RISK_COLOURS.LOW,
+  'MODERATE',
+  RISK_COLOURS.MODERATE,
+  'SIGNIFICANT',
+  RISK_COLOURS.SIGNIFICANT,
+  'EXTREME',
+  RISK_COLOURS.EXTREME,
+  NO_DATA_COLOUR,
+]
+
+function addRouteLayers(instance: MapLibreMap, mode: RouteMode) {
+  const ids = routeIds(mode)
+  const look = ROUTE_LOOK[mode]
+
+  instance.addSource(ids.source, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  })
+
+  instance.addLayer({
+    id: ids.noData,
+    type: 'line',
+    source: ids.source,
+    filter: ['==', ['get', 'risk'], NO_DATA],
+    layout: { 'line-cap': 'butt', 'line-join': 'round' },
+    paint: {
+      'line-color': NO_DATA_COLOUR,
+      'line-width': look.width,
+      'line-opacity': look.opacity,
+      'line-dasharray': [2, 2],
+    },
+  })
+
+  instance.addLayer({
+    id: ids.line,
+    type: 'line',
+    source: ids.source,
+    filter: ['!=', ['get', 'risk'], NO_DATA],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': RISK_COLOUR_EXPRESSION,
+      'line-width': look.width,
+      'line-opacity': look.opacity,
+    },
   })
 }
 
@@ -112,9 +193,13 @@ export default function RiskMap() {
 
   const [from, setFrom] = useState<Endpoint | null>(null)
   const [to, setTo] = useState<Endpoint | null>(null)
-  const [mode, setMode] = useState<RouteMode>('safest')
   const [nextClickSets, setNextClickSets] = useState<'from' | 'to'>('from')
-  const [route, setRoute] = useState<RouteResponse | null>(null)
+  const [routes, setRoutes] = useState<Record<RouteMode, RouteResponse | null>>({
+    safest: null,
+    fastest: null,
+  })
+  const [failures, setFailures] = useState<RouteFailure[]>([])
+  const [hovered, setHovered] = useState<RouteMode | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -322,7 +407,67 @@ export default function RiskMap() {
     })
   }, [from, to, mapReady])
 
-  // Draw the route, segment by segment, and fit the map to it.
+  // Draw both routes, segment by segment, and fit the map to them.
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady) return
+
+    ROUTE_MODES.forEach((mode) => {
+      const ids = routeIds(mode)
+      if (!instance.getSource(ids.source)) addRouteLayers(instance, mode)
+
+      const route = routes[mode]
+      const data: FeatureCollection<LineString> = {
+        type: 'FeatureCollection',
+        features: route ? toSegmentFeatures(route) : [],
+      }
+      ;(instance.getSource(ids.source) as GeoJSONSource).setData(data)
+    })
+
+    bringRouteToFront(instance)
+
+    const allCoordinates = ROUTE_MODES.flatMap(
+      (mode) => routes[mode]?.geometry.coordinates ?? [],
+    )
+    if (allCoordinates.length === 0) return
+
+    const bounds = allCoordinates.reduce(
+      (box, coordinate) => box.extend(coordinate),
+      new LngLatBounds(allCoordinates[0], allCoordinates[0]),
+    )
+    instance.fitBounds(bounds, { padding: 60, duration: 600 })
+  }, [routes, mapReady])
+
+  // Hovering a card lifts its line and fades the other one.
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady) return
+
+    ROUTE_MODES.forEach((mode) => {
+      const ids = routeIds(mode)
+      if (!instance.getLayer(ids.line)) return
+
+      let look = ROUTE_LOOK[mode]
+      if (hovered === mode) look = HIGHLIGHT_LOOK
+      else if (hovered) look = { width: look.width, opacity: DIMMED_OPACITY }
+
+      ;[ids.line, ids.noData].forEach((layerId) => {
+        instance.setPaintProperty(layerId, 'line-width', look.width)
+        instance.setPaintProperty(layerId, 'line-opacity', look.opacity)
+      })
+    })
+
+    // A highlighted Fastest line has to come up over Safest to be seen.
+    bringRouteToFront(instance)
+    if (hovered === 'fastest') {
+      const ids = routeIds('fastest')
+      instance.moveLayer(ids.noData)
+      instance.moveLayer(ids.line)
+    }
+  }, [hovered, routes, mapReady])
+
+  // Label unrated stretches so they never read as LOW. Only the line in
+  // focus is labelled, otherwise overlapping routes would double each label.
   useEffect(() => {
     const instance = map.current
     if (!instance || !mapReady) return
@@ -330,62 +475,11 @@ export default function RiskMap() {
     noDataLabels.current.forEach((marker) => marker.remove())
     noDataLabels.current = []
 
-    const features = route ? toSegmentFeatures(route) : []
-    const data: FeatureCollection<LineString> = {
-      type: 'FeatureCollection',
-      features,
-    }
+    const focus: RouteMode = hovered ?? (routes.safest ? 'safest' : 'fastest')
+    const route = routes[focus]
+    if (!route) return
 
-    const existing = instance.getSource(ROUTE_SOURCE)
-    if (existing) {
-      ;(existing as GeoJSONSource).setData(data)
-    } else {
-      instance.addSource(ROUTE_SOURCE, { type: 'geojson', data })
-
-      instance.addLayer({
-        id: ROUTE_NODATA_LAYER,
-        type: 'line',
-        source: ROUTE_SOURCE,
-        filter: ['==', ['get', 'risk'], NO_DATA],
-        layout: { 'line-cap': 'butt', 'line-join': 'round' },
-        paint: {
-          'line-color': NO_DATA_COLOUR,
-          'line-width': 6,
-          'line-dasharray': [2, 2],
-        },
-      })
-
-      instance.addLayer({
-        id: ROUTE_LAYER,
-        type: 'line',
-        source: ROUTE_SOURCE,
-        filter: ['!=', ['get', 'risk'], NO_DATA],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': [
-            'match',
-            ['get', 'risk'],
-            'LOW',
-            RISK_COLOURS.LOW,
-            'MODERATE',
-            RISK_COLOURS.MODERATE,
-            'SIGNIFICANT',
-            RISK_COLOURS.SIGNIFICANT,
-            'EXTREME',
-            RISK_COLOURS.EXTREME,
-            NO_DATA_COLOUR,
-          ],
-          'line-width': 6,
-        },
-      })
-    }
-
-    bringRouteToFront(instance)
-
-    if (!route || features.length === 0) return
-
-    // Label unrated stretches on the map so they can never read as LOW.
-    features
+    toSegmentFeatures(route)
       .filter((feature) => feature.properties.risk === NO_DATA)
       .forEach((feature) => {
         const element = document.createElement('span')
@@ -397,16 +491,7 @@ export default function RiskMap() {
             .addTo(instance),
         )
       })
-
-    const bounds = route.geometry.coordinates.reduce(
-      (box, coordinate) => box.extend(coordinate as [number, number]),
-      new LngLatBounds(
-        route.geometry.coordinates[0] as [number, number],
-        route.geometry.coordinates[0] as [number, number],
-      ),
-    )
-    instance.fitBounds(bounds, { padding: 60, duration: 600 })
-  }, [route, mapReady])
+  }, [hovered, routes, mapReady])
 
   const selectEndpoint = useCallback(
     (value: string, set: (endpoint: Endpoint | null) => void) => {
@@ -423,40 +508,46 @@ export default function RiskMap() {
 
     setLoading(true)
     setError(null)
+    setFailures([])
+    setHovered(null)
 
-    try {
-      const result = await getRoute(
-        { lat: from.lat, lon: from.lon },
-        { lat: to.lat, lon: to.lon },
-        mode,
-      )
-      setRoute(result)
-    } catch (requestError) {
-      setRoute(null)
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : 'The routing service could not be reached.',
-      )
-    } finally {
-      setLoading(false)
+    const comparison = await getRouteComparison(
+      { lat: from.lat, lon: from.lon },
+      { lat: to.lat, lon: to.lon },
+    )
+
+    setRoutes({ safest: comparison.safest, fastest: comparison.fastest })
+    if (!comparison.safest && !comparison.fastest) {
+      setError(comparison.failures[0]?.detail ?? 'No route came back.')
+    } else {
+      setFailures(comparison.failures)
     }
-  }, [from, to, mode])
+    setLoading(false)
+  }, [from, to])
 
   return (
     <div className="risk-map-wrapper">
       <RoutePanel
         from={from}
         to={to}
-        mode={mode}
         loading={loading}
         error={error}
-        route={route}
+        routes={routes}
+        failures={failures}
+        verdict={
+          routes.safest && routes.fastest
+            ? routeVerdict(routes.safest, routes.fastest)
+            : null
+        }
+        noDataKm={{
+          safest: routes.safest ? noDataKmOf(routes.safest) : 0,
+          fastest: routes.fastest ? noDataKmOf(routes.fastest) : 0,
+        }}
+        hovered={hovered}
         nextClickSets={nextClickSets}
-        noDataKm={route ? noDataKmOf(route) : 0}
         onSelectFrom={(value) => selectEndpoint(value, setFrom)}
         onSelectTo={(value) => selectEndpoint(value, setTo)}
-        onModeChange={setMode}
+        onHover={setHovered}
         onSubmit={handleSubmit}
       />
 
@@ -505,6 +596,14 @@ export default function RiskMap() {
           <div>
             <span className="legend-swatch legend-swatch-nodata" />
             Route — no data
+          </div>
+          <div>
+            <span className="legend-swatch legend-swatch-safest" />
+            Safest — solid
+          </div>
+          <div>
+            <span className="legend-swatch legend-swatch-fastest" />
+            Fastest — thin, underneath
           </div>
         </div>
       </div>

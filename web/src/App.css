@@ -1236,3 +1236,92 @@ footer {
     transparent 4px 7px
   );
 }
+
+/* ---- Route comparison ---------------------------------------------- */
+
+.route-verdict {
+  margin: 0 0 0.9rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 4px solid #1f4e79;
+  background: #eef4fa;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #1c2b3a;
+}
+
+.route-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.9rem;
+}
+
+.route-card {
+  border: 1px solid #d6dbe3;
+  border-radius: 8px;
+  padding: 0.8rem 0.9rem 0.9rem;
+  background: #fff;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.route-card:focus-visible {
+  outline: 2px solid #1f4e79;
+  outline-offset: 2px;
+}
+
+.route-card.is-highlighted {
+  border-color: #1f4e79;
+  box-shadow: 0 0 0 2px rgb(31 78 121 / 0.18);
+}
+
+.route-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.route-card-head h5 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.route-card-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: #6b7482;
+}
+
+.route-card-line::before {
+  content: '';
+  display: inline-block;
+  width: 22px;
+  border-radius: 2px;
+  background: #2e7d32;
+}
+
+.route-card-line-safest::before {
+  height: 5px;
+}
+
+.route-card-line-fastest::before {
+  height: 3px;
+  opacity: 0.45;
+}
+
+.route-card .route-error {
+  margin-top: 0;
+}
+
+.legend-swatch-safest {
+  height: 6px;
+  background: #2e7d32;
+}
+
+.legend-swatch-fastest {
+  height: 3px;
+  background: #2e7d32;
+  opacity: 0.45;
+}

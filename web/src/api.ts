@@ -82,3 +82,52 @@ export async function getRoute(
 
   return (await response.json()) as RouteResponse
 }
+
+export interface RouteFailure {
+  mode: RouteMode
+  detail: string
+}
+
+export interface RouteComparison {
+  safest: RouteResponse | null
+  fastest: RouteResponse | null
+  failures: RouteFailure[]
+}
+
+/**
+ * Both modes for the same pair of points, asked for together. One mode can
+ * fail while the other succeeds, so each failure is reported with the API's
+ * own detail rather than losing the route that did come back.
+ */
+export async function getRouteComparison(
+  from: LatLon,
+  to: LatLon,
+): Promise<RouteComparison> {
+  const modes: RouteMode[] = ['safest', 'fastest']
+  const settled = await Promise.allSettled(
+    modes.map((mode) => getRoute(from, to, mode)),
+  )
+
+  const comparison: RouteComparison = {
+    safest: null,
+    fastest: null,
+    failures: [],
+  }
+
+  settled.forEach((result, index) => {
+    const mode = modes[index]
+    if (result.status === 'fulfilled') {
+      comparison[mode] = result.value
+    } else {
+      comparison.failures.push({
+        mode,
+        detail:
+          result.reason instanceof Error
+            ? result.reason.message
+            : 'The routing service could not be reached.',
+      })
+    }
+  })
+
+  return comparison
+}
