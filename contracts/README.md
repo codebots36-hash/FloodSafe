@@ -26,12 +26,12 @@ Conventions:
 - `geometry`: GeoJSON LineString of the whole route.
 - `segments[]`: consecutive stretches of the route, each with:
   - `start`, `end`: indexes into `geometry.coordinates` where the stretch begins and ends.
-  - `risk_class`: risk class of the stretch.
-  - `risk_source`: `surveyed` or `modelled`.
+  - `risk_class`: risk class of the stretch, or `null` where the road is outside Uttarakhand and has no score. Draw `null` as "no data", never as `LOW`.
+  - `risk_source`: `surveyed` or `modelled`, or `null` when `risk_class` is `null`.
   - `landslide_prone`: `true` if the stretch is in a landslide-prone area.
   - `forecast_rain_mm`: rain forecast for the time you reach it, in mm, or `null` if unknown.
   - `report_id`: id of a community report on this stretch, or `null`.
-- `summary.km_by_class`: km of route in each risk class (`LOW`, `MODERATE`, `SIGNIFICANT`, `EXTREME`).
+- `summary.km_by_class`: km of route in each risk class (`LOW`, `MODERATE`, `SIGNIFICANT`, `EXTREME`). Stretches with no score are left out, so these can sum to less than `distance_km`; `notes` then says how many km have no score.
 - `summary.extreme_segments`: number of segments rated `EXTREME`.
 - `notes[]`: short sentences to show the user about this route.
 

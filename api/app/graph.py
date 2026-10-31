@@ -67,6 +67,20 @@ class RoadGraph:
         self.geom_offsets = load("edge_geom_offsets")
         self.geom_lonlat = load("edge_geom_lonlat")
 
+        # Risk per directed edge from pipeline/build_road_risk.py: 0-3 =
+        # LOW..EXTREME, 255 = not scored (outside the state). Without those
+        # files every edge reads as not scored and Safest routing is off.
+        self.has_risk = os.path.exists(os.path.join(self.dir, "edge_risk.npy"))
+        if self.has_risk:
+            self.edge_risk = load("edge_risk")
+            self.edge_surveyed = load("edge_surveyed")
+            self.edge_landslide = load("edge_landslide")
+        else:
+            n = len(self.edge_u)
+            self.edge_risk = np.full(n, 255, dtype=np.uint8)
+            self.edge_surveyed = np.zeros(n, dtype=bool)
+            self.edge_landslide = np.zeros(n, dtype=bool)
+
         with open(os.path.join(self.dir, "class_codes.json"), encoding="utf-8") as fh:
             codes = json.load(fh)
         with open(os.path.join(self.dir, "graph_meta.json"), encoding="utf-8") as fh:
