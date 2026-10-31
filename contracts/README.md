@@ -100,7 +100,7 @@ A **report** ([report.json](report.json)) is:
   - `name`: place name.
   - `kind`: OpenStreetMap type, for example `shelter`, `hospital` or `clinic`.
   - `lat`, `lon`: location.
-  - `near_locality`: name of the nearest locality.
+  - `near_locality`: name of the nearest locality, or `null` if none is within 5 km.
   - `source`: always `"OpenStreetMap"`.
 
 ## GET /localities → [localities.json](localities.json)

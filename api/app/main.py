@@ -5,10 +5,11 @@ Serves the endpoints described in contracts/. Implemented so far:
   GET /route              a road route between two points (fastest or safest)
   GET /layers/road-risk   roads rated MODERATE or worse (GeoJSON)
   GET /layers/atlas       surveyed hazard atlas polygons (GeoJSON)
+  GET /shelters, /hospitals, /localities   places from OpenStreetMap
 
 Data sources: the road graph built by pipeline/build_graph.py from
 OpenStreetMap (Geofabrik India central zone, ODbL), with risk classes from
-pipeline/build_road_risk.py.
+pipeline/build_road_risk.py; places from pipeline/build_places.py.
 
 Run from api/: uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
@@ -33,6 +34,7 @@ LAYER_DIRS = [
     os.path.join(os.path.dirname(API_DIR), "pipeline", "out", "layers"),  # local build
 ]
 LAYER_FILES = {"road-risk": "road_risk.geojson", "atlas": "atlas.geojson"}
+DATA_DIR = os.path.join(API_DIR, "data")  # pipeline/build_places.py writes here
 
 # Without pipeline/build_road_risk.py's files no edge has a risk class. The
 # route still reports its shape honestly and says the scores are missing,
@@ -139,3 +141,26 @@ def get_layer(name: str):
             return FileResponse(path, media_type="application/geo+json",
                                 headers={"Cache-Control": "public, max-age=3600"})
     raise RoutingError("not_found", f"The {name} layer has not been built yet.", 404)
+
+
+def places_file(name):
+    path = os.path.join(DATA_DIR, f"{name}.json")
+    if not os.path.exists(path):
+        raise RoutingError("not_found", f"The {name} list has not been built yet.", 404)
+    return FileResponse(path, media_type="application/json",
+                        headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/shelters")
+def get_shelters():
+    return places_file("shelters")
+
+
+@app.get("/hospitals")
+def get_hospitals():
+    return places_file("hospitals")
+
+
+@app.get("/localities")
+def get_localities():
+    return places_file("localities")

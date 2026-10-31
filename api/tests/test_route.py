@@ -78,3 +78,18 @@ def test_a_point_at_sea_is_refused():
     assert response.status_code == 400
     assert response.json()["error"] == "too_far_from_road"
 
+
+
+def test_places_match_the_contracts():
+    import json
+    import os
+    contracts = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "contracts")
+    for name in ("shelters", "hospitals", "localities"):
+        response = client.get(f"/{name}")
+        assert response.status_code == 200
+        items = response.json()["items"]
+        with open(os.path.join(contracts, f"{name}.json"), encoding="utf-8") as fh:
+            expected = set(json.load(fh)["items"][0])
+        assert items and all(set(item) == expected for item in items), name
+    names = {item["name"] for item in client.get("/localities").json()["items"]}
+    assert {"Rishikesh", "Dehradun", "Uttarkashi"} <= names
