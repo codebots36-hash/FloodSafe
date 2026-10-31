@@ -441,3 +441,72 @@ footer {
 .notification-options input:disabled {
   cursor: not-allowed;
 }
+.replay-card {
+  background: #ffffff;
+  border: 1px solid #dce5ed;
+  border-radius: 20px;
+  padding: 24px;
+  margin: 24px 0;
+  box-shadow: 0 8px 24px rgba(20, 50, 80, 0.05);
+}
+
+.replay-card h3 {
+  margin: 8px 0;
+  color: #17324d;
+}
+
+.replay-timeline {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  color: #52677d;
+}
+
+.replay-timeline input {
+  width: 100%;
+  accent-color: #2563eb;
+}
+
+.replay-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.replay-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: #f5f8fb;
+  border-radius: 12px;
+}
+
+.replay-summary span {
+  color: #52677d;
+  font-size: 0.9rem;
+}
+
+.replay-summary strong {
+  color: #17324d;
+  font-size: 1.4rem;
+}
+
+.replay-risk.replay-safe {
+  color: #2f9e68;
+}
+
+.replay-risk.replay-watch {
+  color: #b7791f;
+}
+
+.replay-risk.replay-critical {
+  color: #d94848;
+}
+
+@media (max-width: 600px) {
+  .replay-summary {
+    grid-template-columns: 1fr;
+  }
+}

@@ -5,6 +5,7 @@ import FloodGuidance from './components/FloodGuidance'
 import OfficialWarnings from './components/OfficialWarnings'
 import ResponderDashboard from './components/ResponderDashboard'
 import NotificationSettings from './components/NotificationSettings'
+import ReplayMode from './components/ReplayMode'
 
 function App() {
   return (
@@ -72,7 +73,8 @@ function App() {
       <OfficialWarnings />
       <ResponderDashboard />
       <NotificationSettings />
-
+      <ReplayMode />
+      
       <footer>
         <span>FloodSafe</span>
         <span>Use official guidance during emergencies.</span>
