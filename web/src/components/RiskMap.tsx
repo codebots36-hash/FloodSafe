@@ -7,6 +7,7 @@ import {
   Map as MapLibreMap,
   Marker,
   NavigationControl,
+  Popup,
   setWorkerUrl,
 } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
@@ -16,10 +17,12 @@ import {
   API,
   getRouteComparison,
   getZones,
+  getWeather,
   type RouteFailure,
   type RouteMode,
   type RouteResponse,
   type Zone,
+  type WeatherResponse,
 } from '../api'
 import { routeVerdict } from '../routeVerdict'
 import RoutePanel from './RoutePanel'
@@ -206,6 +209,7 @@ function addRouteLayers(instance: MapLibreMap, mode: RouteMode) {
 export default function RiskMap() {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
+  const rainPopup = useRef<Popup | null>(null)
   const endpointMarkers = useRef<Marker[]>([])
   const zoneMarkers = useRef<Marker[]>([])
   const noDataLabels = useRef<Marker[]>([])
@@ -213,6 +217,8 @@ export default function RiskMap() {
 
   const [mapReady, setMapReady] = useState(false)
   const [zones, setZones] = useState<Zone[] | null>(null)
+  const [rainPoint, setRainPoint] = useState<Endpoint | null>(null)
+  const [weather, setWeather] = useState<WeatherResponse | null>(null)
   const [showAtlas, setShowAtlas] = useState(true)
   const [showRoadRisk, setShowRoadRisk] = useState(true)
   const [roadLayerStatus, setRoadLayerStatus] =
@@ -296,6 +302,24 @@ export default function RiskMap() {
         pickTarget.current = 'from'
         setNextClickSets('from')
       }
+
+      const popupContent = document.createElement('div')
+      popupContent.className = 'rain-popup'
+      const popupButton = document.createElement('button')
+      popupButton.type = 'button'
+      popupButton.className = 'rain-here-button'
+      popupButton.textContent = 'Rain here'
+      popupButton.addEventListener('click', (popupEvent) => {
+        popupEvent.stopPropagation()
+        setWeather(null)
+        setRainPoint(picked)
+      })
+      popupContent.append(popupButton)
+      rainPopup.current?.remove()
+      rainPopup.current = new Popup({ closeButton: true, closeOnClick: false, offset: 12 })
+        .setLngLat([picked.lon, picked.lat])
+        .setDOMContent(popupContent)
+        .addTo(instance)
     })
 
     instance.on('load', () => {
@@ -389,6 +413,8 @@ export default function RiskMap() {
       zoneMarkers.current = []
       noDataLabels.current.forEach((marker) => marker.remove())
       noDataLabels.current = []
+      rainPopup.current?.remove()
+      rainPopup.current = null
       instance.remove()
       map.current = null
       setMapReady(false)
@@ -483,6 +509,23 @@ export default function RiskMap() {
       )
     })
   }, [zones, mapReady])
+  useEffect(() => {
+    if (!rainPoint) return
+
+    let active = true
+    getWeather({ lat: rainPoint.lat, lon: rainPoint.lon })
+      .then((response) => {
+        if (active) setWeather(response)
+      })
+      .catch(() => {
+        // Null weather keeps the card on its neutral waiting message.
+        if (active) setWeather(null)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [rainPoint])
   // Draw both routes, segment by segment, and fit the map to them.
   useEffect(() => {
     const instance = map.current
@@ -701,6 +744,43 @@ export default function RiskMap() {
         </div>
       </div>
 
+      {rainPoint && (
+        <section className="rain-card" aria-labelledby="rain-card-heading">
+          <div className="rain-card-heading">
+            <h4 id="rain-card-heading">Rain at selected point</h4>
+            <button type="button" onClick={() => setRainPoint(null)}>Close</button>
+          </div>
+          {!weather ? (
+            <p className="rain-waiting" role="status">Waiting for live data</p>
+          ) : (
+            <>
+              <div className="rain-reading-grid">
+                <div><span>Current rain</span><strong>{weather.current_mm_h} mm/h</strong></div>
+                <div><span>Last 72 hours</span><strong>{weather.last_72h_mm} mm</strong></div>
+              </div>
+              <p className="rain-forecast-label">Next 24 hours</p>
+              <div className="rain-chart" role="img" aria-label="Hourly rainfall forecast for the next 24 hours">
+                {weather.hourly.map((hour) => {
+                  const maximum = Math.max(...weather.hourly.map((item) => item.mm), 0)
+                  const height = maximum > 0 ? Math.max(4, (hour.mm / maximum) * 100) : 4
+                  return (
+                    <span
+                      key={hour.time}
+                      className="rain-bar"
+                      style={{ height: `${height}%` }}
+                      title={`${new Date(hour.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: ${hour.mm} mm`}
+                    />
+                  )
+                })}
+              </div>
+              <div className="rain-meta">
+                <span>As of {new Date(weather.as_of).toLocaleString()}</span>
+                <span>Source: {weather.source}</span>
+              </div>
+            </>
+          )}
+        </section>
+      )}
       <section className="zones-panel" aria-labelledby="zones-heading">
         <div className="zones-panel-heading">
           <div>
@@ -749,3 +829,6 @@ export default function RiskMap() {
     </div>
   )
 }
+
+
+

@@ -1,12 +1,14 @@
 
+import { lazy, Suspense } from 'react'
 import './App.css'
-import RiskMap from './components/RiskMap'
 import FloodGuidance from './components/FloodGuidance'
 import OfficialWarnings from './components/OfficialWarnings'
 import ResponderDashboard from './components/ResponderDashboard'
 import NotificationSettings from './components/NotificationSettings'
 import ReplayMode from './components/ReplayMode'
 import PreviewBadge from './components/PreviewBadge'
+
+const RiskMap = lazy(() => import('./components/RiskMap'))
 
 // No status feed is connected yet; listing the metrics without values keeps
 // the layout without any figure that could be read as a reading.
@@ -126,7 +128,9 @@ function App() {
             </div>
             <span className="map-tag">Surveyed data</span>
           </div>
-          <RiskMap />
+          <Suspense fallback={<p role="status">Loading map…</p>}>
+            <RiskMap />
+          </Suspense>
         </section>
 
         <section id="ffgs" className="portal-section">
@@ -154,3 +158,4 @@ function App() {
 }
 
 export default App
+

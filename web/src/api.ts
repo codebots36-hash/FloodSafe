@@ -1,5 +1,11 @@
 export const API = import.meta.env.VITE_API_URL
 
+if (!API) {
+  throw new Error(
+    'VITE_API_URL is not set. Copy web/.env.example to web/.env.local.',
+  )
+}
+
 export type RiskClass = 'LOW' | 'MODERATE' | 'SIGNIFICANT' | 'EXTREME'
 export type RiskSource = 'surveyed' | 'modelled'
 export type RouteMode = 'fastest' | 'safest'
@@ -28,6 +34,15 @@ export interface Zone {
   catchment_km2: number
 }
 
+export type WeatherSource = 'live' | 'relay' | 'replay'
+
+export interface WeatherResponse {
+  as_of: string
+  source: WeatherSource
+  current_mm_h: number
+  last_72h_mm: number
+  hourly: { time: string; mm: number }[]
+}
 export interface ZonesResponse {
   as_of: string
   source: 'live' | 'relay' | 'replay'
@@ -104,6 +119,39 @@ export interface LatLon {
   lon: number
 }
 
+/** Fetch weather for a selected map point. */
+export async function getWeather(point: LatLon): Promise<WeatherResponse> {
+  if (!API) {
+    throw new Error(
+      'VITE_API_URL is not set, so the app does not know where the FloodSafe API is.',
+    )
+  }
+
+  const params = new URLSearchParams({
+    lat: String(point.lat),
+    lon: String(point.lon),
+  })
+
+  let response: Response
+  try {
+    response = await fetch(`${API}/weather?${params}`)
+  } catch {
+    throw new Error(`Could not reach the FloodSafe API at ${API}.`)
+  }
+
+  if (!response.ok) {
+    let detail = `Request failed with status ${response.status}`
+    try {
+      const body: ApiError = await response.json()
+      if (body?.detail) detail = body.detail
+    } catch {
+      // Keep the status text when the response is not the documented error shape.
+    }
+    throw new Error(detail)
+  }
+
+  return (await response.json()) as WeatherResponse
+}
 /** Throws the API's `detail` sentence when the response is not 200. */
 export async function getRoute(
   from: LatLon,
@@ -191,3 +239,5 @@ export async function getRouteComparison(
 
   return comparison
 }
+
+
