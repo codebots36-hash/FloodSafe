@@ -1,15 +1,12 @@
 import { useState } from 'react'
+import PreviewBadge from './PreviewBadge'
 
-const replaySamples = [
-  { time: '08:00', rainfall: '12 mm', risk: 'SAFE' },
-  { time: '10:00', rainfall: '24 mm', risk: 'WATCH' },
-  { time: '12:00', rainfall: '38 mm', risk: 'CRITICAL' },
-  { time: '14:00', rainfall: '19 mm', risk: 'WATCH' },
-]
+// Steps only show how the timeline will move; no replay data is connected,
+// so no rainfall or risk values are invented for them.
+const REPLAY_STEPS = 4
 
 export default function ReplayMode() {
   const [index, setIndex] = useState(0)
-  const sample = replaySamples[index]
 
   return (
     <section className="replay-card">
@@ -19,15 +16,17 @@ export default function ReplayMode() {
           <h3>Replay mode</h3>
           <p>Explore how conditions changed over time.</p>
         </div>
-        <span className="status-label">DEMO</span>
+        <PreviewBadge />
       </div>
 
       <label className="replay-timeline">
-        <span>Timeline: {sample.time}</span>
+        <span>
+          Timeline: step {index + 1} of {REPLAY_STEPS}
+        </span>
         <input
           type="range"
           min={0}
-          max={replaySamples.length - 1}
+          max={REPLAY_STEPS - 1}
           step={1}
           value={index}
           onChange={(event) => setIndex(Number(event.target.value))}
@@ -37,18 +36,17 @@ export default function ReplayMode() {
       <div className="replay-summary">
         <div>
           <span>Rainfall</span>
-          <strong>{sample.rainfall}</strong>
+          <strong className="preview-value">Not connected</strong>
         </div>
         <div>
           <span>Risk level</span>
-          <strong className={`replay-risk replay-${sample.risk.toLowerCase()}`}>
-            {sample.risk}
-          </strong>
+          <strong className="preview-value">Not connected</strong>
         </div>
       </div>
 
       <p className="data-note">
-        Illustrative sample data only — not historical or live measurements.
+        Layout preview — no historical rainfall is connected, so no readings are
+        shown.
       </p>
     </section>
   )

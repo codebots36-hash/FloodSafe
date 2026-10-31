@@ -1,5 +1,8 @@
+type FloodStatus = 'SAFE' | 'WATCH' | 'CRITICAL'
+
 type FloodGuidanceProps = {
-  status: 'SAFE' | 'WATCH' | 'CRITICAL'
+  /** The area's live status. Leave it out until a status feed is connected. */
+  status?: FloodStatus
 }
 
 const guidance = {
@@ -31,11 +34,26 @@ const guidance = {
   },
 }
 
+// Shown when no status is known: advice that holds in any conditions, with
+// no claim about what the conditions are.
+const generalGuidance = {
+  title: 'Before you travel',
+  message:
+    'The current flood status for your area is not connected here yet. Check official alerts for your route.',
+  actions: [
+    'Check official weather and local alerts before travelling.',
+    'Avoid crossing flooded roads or streams.',
+    'Avoid low-lying roads and areas near rivers during heavy rain.',
+    'Keep your phone charged during monsoon travel.',
+  ],
+}
+
 export default function FloodGuidance({ status }: FloodGuidanceProps) {
-  const advice = guidance[status]
+  const advice = status ? guidance[status] : generalGuidance
+  const variant = status ? status.toLowerCase() : 'general'
 
   return (
-    <section className={`guidance-card guidance-${status.toLowerCase()}`}>
+    <section className={`guidance-card guidance-${variant}`}>
       <p className="eyebrow">FLOOD GUIDANCE</p>
       <h3>{advice.title}</h3>
       <p>{advice.message}</p>

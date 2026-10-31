@@ -1366,3 +1366,47 @@ footer {
   background: #2e7d32;
   opacity: 0.45;
 }
+
+/* ---- Preview screens (no live data yet) ---------------------------- */
+
+.preview-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  max-width: 100%;
+  margin: 6px 0;
+  padding: 4px 10px;
+  border: 1px dashed #b7791f;
+  border-radius: 999px;
+  background: #fff8e6;
+  color: #7a4d00;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.section-heading > .preview-badge {
+  flex: none;
+  margin-left: auto;
+}
+
+/* On narrow screens the badge drops under the heading instead of overflowing. */
+@media (max-width: 600px) {
+  .section-heading:has(> .preview-badge) {
+    flex-wrap: wrap;
+  }
+
+  .section-heading > .preview-badge {
+    flex: 0 1 auto;
+    order: -1;
+    margin-left: 0;
+  }
+}
+
+/* Stands in for a figure that has no data behind it yet. */
+.preview-value {
+  color: #8a93a0 !important;
+  font-size: 0.9rem !important;
+  font-style: italic;
+  font-weight: 600 !important;
+}

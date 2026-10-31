@@ -6,6 +6,17 @@ import OfficialWarnings from './components/OfficialWarnings'
 import ResponderDashboard from './components/ResponderDashboard'
 import NotificationSettings from './components/NotificationSettings'
 import ReplayMode from './components/ReplayMode'
+import PreviewBadge from './components/PreviewBadge'
+
+// No status feed is connected yet; listing the metrics without values keeps
+// the layout without any figure that could be read as a reading.
+const statusMetrics = [
+  'Road network nodes covered',
+  'Shelters & hospitals mapped',
+  'Active hazard reports right now',
+  'Rainfall — currently wettest station',
+  'Rainfall — currently driest station',
+]
 
 function App() {
   return (
@@ -33,7 +44,7 @@ function App() {
         </a>
 
         <nav className="portal-nav">
-          <a href="#live-status">Live Status</a>
+          <a href="#live-status">System Status</a>
           <a href="#guidance">Flood Guidance</a>
           <a href="#ffgs">FFGS</a>
           <a href="#services">Services</a>
@@ -58,7 +69,7 @@ function App() {
             </p>
             <div className="hero-actions">
               <a className="primary-button" href="#map-tool">Open the Map Tool →</a>
-              <a className="secondary-button" href="#live-status">View Live Status</a>
+              <a className="secondary-button" href="#live-status">View System Status</a>
             </div>
             <button className="sos-button" type="button">
               <span className="sos-circle">SOS</span>
@@ -83,15 +94,16 @@ function App() {
         </section>
 
         <section id="live-status" className="portal-section">
-          <h3>LIVE SYSTEM STATUS</h3>
-          <p className="system-status"><span /> Routing engine online — figures below are sample data</p>
+          <h3>SYSTEM STATUS</h3>
+          <PreviewBadge />
           <div className="status-table">
             <div className="table-head"><span>Metric</span><span>Value</span></div>
-            <div><span>Road network nodes covered</span><strong>2,021,505</strong></div>
-            <div><span>Shelters &amp; hospitals mapped</span><strong>570</strong></div>
-            <div><span>Active hazard reports right now</span><strong>0</strong></div>
-            <div><span>Live rainfall — currently wettest station</span><strong>0.0 mm (Dehradun)</strong></div>
-            <div><span>Live rainfall — currently driest station</span><strong>0.0 mm (Joshimath)</strong></div>
+            {statusMetrics.map((metric) => (
+              <div key={metric}>
+                <span>{metric}</span>
+                <strong className="preview-value">Not connected</strong>
+              </div>
+            ))}
           </div>
           <div className="hazard-legend">
             <span><i className="hazard-low" /> LOW hazard</span>
@@ -99,11 +111,11 @@ function App() {
             <span><i className="hazard-significant" /> SIGNIFICANT hazard</span>
             <span><i className="hazard-extreme" /> EXTREME hazard</span>
           </div>
-          <p className="data-note">Illustrative values — replace with live backend data when connected.</p>
+          <p className="data-note">Layout preview — no status feed is connected, so no figures are shown.</p>
         </section>
 
         <section id="guidance" className="portal-section">
-          <FloodGuidance status="WATCH" />
+          <FloodGuidance />
         </section>
 
         <section id="map-tool" className="portal-section">

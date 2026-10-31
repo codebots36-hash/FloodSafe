@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import PreviewBadge from './PreviewBadge'
 
 export default function NotificationSettings() {
   const [enabled, setEnabled] = useState(false)
@@ -10,6 +11,7 @@ export default function NotificationSettings() {
           <p className="eyebrow">ALERT PREFERENCES</p>
           <h3>Push notifications</h3>
           <p>Choose whether to receive flood safety alerts.</p>
+          <PreviewBadge />
         </div>
 
         <label className="notification-toggle">
