@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useT } from '../settings'
 import type { RouteFailure, RouteMode, RouteResponse } from '../api'
 import {
   NO_DATA_COLOUR,
@@ -86,6 +87,7 @@ function RouteCard({
   highlighted,
   onHover,
 }: RouteCardProps) {
+  const t = useT()
   const barWidth = (km: number) => (maxKm > 0 ? `${(km / maxKm) * 100}%` : '0%')
 
   return (
@@ -99,9 +101,9 @@ function RouteCard({
       onBlur={() => onHover(null)}
     >
       <header className="route-card-head">
-        <h5>{CARD_TITLES[mode]}</h5>
+        <h5>{t(CARD_TITLES[mode])}</h5>
         <span className={`route-card-line route-card-line-${mode}`}>
-          {CARD_LINE_HINTS[mode]}
+          {t(CARD_LINE_HINTS[mode])}
         </span>
       </header>
 
@@ -116,23 +118,23 @@ function RouteCard({
         <>
           <div className="route-figures">
             <div>
-              <span>Distance</span>
+              <span>{t('Distance')}</span>
               <strong>{route.distance_km.toFixed(1)} km</strong>
             </div>
             <div>
-              <span>Driving time</span>
+              <span>{t('Driving time')}</span>
               <strong>{Math.round(route.duration_min)} min</strong>
             </div>
             {wettest(route) !== null && (
               <div>
-                <span>Wettest hour on the way</span>
+                <span>{t('Wettest hour on the way')}</span>
                 <strong>{wettest(route)} mm</strong>
               </div>
             )}
           </div>
 
           <table className="route-km-table">
-            <caption>Kilometres by risk class</caption>
+            <caption>{t('Kilometres by risk class')}</caption>
             <tbody>
               {RISK_ORDER.map((riskClass) => {
                 const km = route.summary.km_by_class[riskClass] ?? 0
@@ -211,6 +213,7 @@ export default function RoutePanel({
   onDepartChange,
   replay,
 }: RoutePanelProps) {
+  const t = useT()
   const hasResult = Boolean(routes.safest || routes.fastest)
   // The live departure window, fixed when the panel opens.
   const [openedAt] = useState(() => Date.now())
@@ -233,7 +236,7 @@ export default function RoutePanel({
   return (
     <div className="route-panel">
       <div className="route-panel-head">
-        <h4>Compare flood-aware routes</h4>
+        <h4>{t('Compare flood-aware routes')}</h4>
         <p>
           Pick two places, or click the map to set{' '}
           <strong>{nextClickSets === 'from' ? 'From' : 'To'}</strong>. Both the
@@ -243,12 +246,12 @@ export default function RoutePanel({
 
       <div className="route-panel-fields">
         <label>
-          <span>From</span>
+          <span>{t('From')}</span>
           <select
             value={selectValue(from)}
             onChange={(event) => onSelectFrom(event.target.value)}
           >
-            <option value="">Select a place…</option>
+            <option value="">{t('Select a place…')}</option>
             {isPicked(from) && <option value="picked">{from!.label}</option>}
             {PLACES.map((place) => (
               <option key={place.id} value={place.id}>
@@ -259,12 +262,12 @@ export default function RoutePanel({
         </label>
 
         <label>
-          <span>To</span>
+          <span>{t('To')}</span>
           <select
             value={selectValue(to)}
             onChange={(event) => onSelectTo(event.target.value)}
           >
-            <option value="">Select a place…</option>
+            <option value="">{t('Select a place…')}</option>
             {isPicked(to) && <option value="picked">{to!.label}</option>}
             {PLACES.map((place) => (
               <option key={place.id} value={place.id}>
@@ -276,7 +279,7 @@ export default function RoutePanel({
       </div>
 
       <label className="route-depart">
-        <span>{replay ? `Leave on ${replay} at` : 'Leave'}</span>
+        <span>{replay ? `${t('Leave on')} ${replay}` : t('Leave')}</span>
         <input
           type="datetime-local"
           value={depart}
@@ -286,11 +289,11 @@ export default function RoutePanel({
         />
         {depart && (
           <button type="button" onClick={() => onDepartChange('')}>
-            {replay ? 'Worst hour' : 'Now'}
+            {replay ? t('Worst hour') : t('Now')}
           </button>
         )}
         <small>
-          Each stretch is judged on the rain at the hour you reach it (India time).
+          {t('Each stretch is judged on the rain at the hour you reach it (India time).')}
         </small>
       </label>
 
@@ -301,7 +304,7 @@ export default function RoutePanel({
           onClick={onSubmit}
           disabled={loading || !from || !to}
         >
-          {loading ? 'Finding routes…' : 'Get routes'}
+          {loading ? t('Finding routes…') : t('Get routes')}
         </button>
       </div>
 
@@ -315,7 +318,7 @@ export default function RoutePanel({
 
       {error && !loading && (
         <p className="route-error" role="alert">
-          <strong>Could not get a route.</strong> {error}
+          <strong>{t('Could not get a route.')}</strong> {error}
         </p>
       )}
 

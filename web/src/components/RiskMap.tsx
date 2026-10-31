@@ -35,7 +35,7 @@ import {
   type WeatherResponse,
 } from '../api'
 import { routeVerdict } from '../routeVerdict'
-import { useSettings } from '../settings'
+import { useSettings, useT } from '../settings'
 import RoutePanel from './RoutePanel'
 import './Zones.css'
 import {
@@ -350,6 +350,7 @@ function savedEndpoints(): { from: Endpoint | null; to: Endpoint | null } {
 
 export default function RiskMap() {
   const { replay } = useSettings()
+  const t = useT()
   const [depart, setDepart] = useState('')
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
@@ -447,6 +448,8 @@ export default function RiskMap() {
       zoom: 10,
       style: {
         version: 8,
+        // Fonts for the locality names (MapLibre's public demo glyphs).
+        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
         sources: {
           osm: {
             type: 'raster',
@@ -929,6 +932,52 @@ export default function RiskMap() {
       .catch(() => setLocalities([]))
   }, [])
 
+  // Named localities: a dot from zoom 10 and the name from zoom 11, so the
+  // ~14,000 places never crowd the state-wide view. Labels that collide are
+  // dropped by MapLibre, not drawn on top of each other.
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady || localities.length === 0 || instance.getSource('localities')) return
+    instance.addSource('localities', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: localities.map((item) => ({
+          type: 'Feature' as const,
+          geometry: { type: 'Point' as const, coordinates: [item.lon, item.lat] },
+          properties: { name: item.name },
+        })),
+      },
+    })
+    instance.addLayer({
+      id: 'localities-dot',
+      type: 'circle',
+      source: 'localities',
+      minzoom: 10,
+      paint: {
+        'circle-radius': 3,
+        'circle-color': '#123b5c',
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 1,
+      },
+    })
+    instance.addLayer({
+      id: 'localities-label',
+      type: 'symbol',
+      source: 'localities',
+      minzoom: 11,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 11,
+        'text-offset': [0, 0.9],
+        'text-anchor': 'top',
+      },
+      paint: { 'text-color': '#123b5c', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
+    })
+    bringRouteToFront(instance)
+  }, [localities, mapReady])
+
   // Community reports: fetched on mount, on demand, and every minute.
   useEffect(() => {
     if (!API) return
@@ -1096,7 +1145,7 @@ export default function RiskMap() {
           type="search"
           value={searchText}
           onChange={(event) => setSearchText(event.target.value)}
-          placeholder="Search a place, e.g. Rishikesh"
+          placeholder={t('Search a place, e.g. Rishikesh')}
           aria-label="Search a locality"
         />
         {searchText.trim().length >= 2 && (
@@ -1151,7 +1200,7 @@ export default function RiskMap() {
               checked={showAtlas}
               onChange={(event) => setShowAtlas(event.target.checked)}
             />
-            Flood hazard area
+            {t('Flood hazard area')}
           </label>
 
           <label>
@@ -1160,7 +1209,7 @@ export default function RiskMap() {
               checked={showRoadRisk}
               onChange={(event) => setShowRoadRisk(event.target.checked)}
             />
-            Road risk
+            {t('Road risk')}
           </label>
 
           <label>
@@ -1169,7 +1218,7 @@ export default function RiskMap() {
               checked={showShelters}
               onChange={(event) => setShowShelters(event.target.checked)}
             />
-            <span className="dot dot-shelter" /> Shelters
+            <span className="dot dot-shelter" /> {t('Shelters')}
           </label>
 
           <label>
@@ -1178,7 +1227,7 @@ export default function RiskMap() {
               checked={showHospitals}
               onChange={(event) => setShowHospitals(event.target.checked)}
             />
-            <span className="dot dot-hospital" /> Hospitals
+            <span className="dot dot-hospital" /> {t('Hospitals')}
           </label>
 
           <label>
@@ -1187,7 +1236,7 @@ export default function RiskMap() {
               checked={showReports}
               onChange={(event) => setShowReports(event.target.checked)}
             />
-            Community reports
+            {t('Community reports')}
           </label>
 
         </div>
@@ -1218,7 +1267,7 @@ export default function RiskMap() {
               boxShadow: '0 2px 10px rgb(0 0 0 / .3)',
             }}
           >
-            {reportMode ? 'Cancel' : 'Report a problem'}
+            {reportMode ? t('Cancel') : t('Report a problem')}
           </button>
           <button
             type="button"
@@ -1236,7 +1285,7 @@ export default function RiskMap() {
               boxShadow: '0 2px 10px rgb(0 0 0 / .3)',
             }}
           >
-            {isFullscreen ? 'Exit full screen' : 'Full screen'}
+            {isFullscreen ? t('Exit full screen') : t('Full screen')}
           </button>
         </div>
 
@@ -1260,7 +1309,7 @@ export default function RiskMap() {
               whiteSpace: 'nowrap',
             }}
           >
-            Click the map where the problem is
+            {t('Click the map where the problem is')}
           </p>
         )}
 
@@ -1275,7 +1324,7 @@ export default function RiskMap() {
         {roadLayerStatus === 'loading' && !layerError && (
           <p className="risk-layer-status" role="status">
             <span className="route-spinner" aria-hidden="true" />
-            Loading risk layer…
+            {t('Loading risk layer…')}
           </p>
         )}
 
@@ -1287,7 +1336,7 @@ export default function RiskMap() {
 
         {/* Collapsed by default so it never covers the map; tap to open. */}
         <details className="risk-map-legend">
-          <summary>Legend</summary>
+          <summary>{t('Legend')}</summary>
           <div>
             {RISK_ORDER.map((riskClass) => (
               <span
@@ -1321,31 +1370,31 @@ export default function RiskMap() {
       <section className="reports-panel" aria-labelledby="reports-heading">
         <div className="reports-panel-heading">
           <div>
-            <h4 id="reports-heading">Community reports</h4>
-            <p>Recent reports from the community</p>
+            <h4 id="reports-heading">{t('Community reports')}</h4>
+            <p>{t('Recent reports from the community')}</p>
           </div>
         </div>
 
         {reportPoint && (
           <form className="report-form" onSubmit={handleReportSubmit}>
-            <h5>Report a problem</h5>
+            <h5>{t('Report a problem')}</h5>
             <p>Selected map point: {reportPoint.lat.toFixed(5)}, {reportPoint.lon.toFixed(5)}</p>
             <label>
-              Problem type
+              {t('Problem type')}
               <select value={reportKind} onChange={(event) => setReportKind(event.target.value as ReportKind)}>
-                <option value="flooded">Flooded</option>
-                <option value="blocked">Blocked</option>
-                <option value="landslide">Landslide</option>
+                <option value="flooded">{t('Flooded')}</option>
+                <option value="blocked">{t('Blocked')}</option>
+                <option value="landslide">{t('Landslide')}</option>
               </select>
             </label>
             <label>
-              Note (optional)
+              {t('Note (optional)')}
               <textarea value={reportNote} onChange={(event) => setReportNote(event.target.value)} rows={3} maxLength={500} />
             </label>
             {reportActionError && <p className="report-error" role="alert">{reportActionError}</p>}
             <div className="report-form-actions">
-              <button type="submit">Submit report</button>
-              <button type="button" onClick={() => setReportPoint(null)}>Cancel</button>
+              <button type="submit">{t('Submit report')}</button>
+              <button type="button" onClick={() => setReportPoint(null)}>{t('Cancel')}</button>
             </div>
           </form>
         )}
@@ -1357,7 +1406,7 @@ export default function RiskMap() {
             {reportListError ?? 'Waiting for live data'}
           </p>
         ) : reports.length === 0 ? (
-          <p className="reports-waiting" role="status">No community reports available.</p>
+          <p className="reports-waiting" role="status">{t('No community reports available.')}</p>
         ) : (
           <ul className="reports-list">
             {reports.map((report) => (
@@ -1380,7 +1429,7 @@ export default function RiskMap() {
                     disabled={confirmingReportId === report.id}
                     onClick={() => handleConfirmReport(report.id)}
                   >
-                    {confirmingReportId === report.id ? 'Confirming…' : 'Confirm'}
+                    {confirmingReportId === report.id ? t('Confirming…') : t('Confirm')}
                   </button>
                 </div>
               </li>
@@ -1391,18 +1440,18 @@ export default function RiskMap() {
       {rainPoint && (
         <section className="rain-card" aria-labelledby="rain-card-heading">
           <div className="rain-card-heading">
-            <h4 id="rain-card-heading">Rain at selected point</h4>
-            <button type="button" onClick={() => setRainPoint(null)}>Close</button>
+            <h4 id="rain-card-heading">{t('Rain at selected point')}</h4>
+            <button type="button" onClick={() => setRainPoint(null)}>{t('Close')}</button>
           </div>
           {!weather ? (
-            <p className="rain-waiting" role="status">Waiting for live data</p>
+            <p className="rain-waiting" role="status">{t('Waiting for live data')}</p>
           ) : (
             <>
               <div className="rain-reading-grid">
-                <div><span>Current rain</span><strong>{weather.current_mm_h} mm/h</strong></div>
-                <div><span>Last 72 hours</span><strong>{weather.last_72h_mm} mm</strong></div>
+                <div><span>{t('Current rain')}</span><strong>{weather.current_mm_h} mm/h</strong></div>
+                <div><span>{t('Last 72 hours')}</span><strong>{weather.last_72h_mm} mm</strong></div>
               </div>
-              <p className="rain-forecast-label">Next 24 hours</p>
+              <p className="rain-forecast-label">{t('Next 24 hours')}</p>
               <div className="rain-chart" role="img" aria-label="Hourly rainfall forecast for the next 24 hours">
                 {weather.hourly.map((hour) => {
                   const maximum = Math.max(...weather.hourly.map((item) => item.mm), 0)
@@ -1428,8 +1477,8 @@ export default function RiskMap() {
       <section className="zones-panel" aria-labelledby="zones-heading">
         <div className="zones-panel-heading">
           <div>
-            <h4 id="zones-heading">Watched zones</h4>
-            <p>Name, district and current status</p>
+            <h4 id="zones-heading">{t('Watched zones')}</h4>
+            <p>{t('Name, district and current status')}</p>
           </div>
           <div className="zones-status-legend" aria-label="Zone status colours">
             <span><i className="zone-dot zone-dot-safe" /> SAFE</span>
@@ -1439,13 +1488,13 @@ export default function RiskMap() {
         </div>
         {zones && zones.length > 0 && (
           <div className="zones-search">
-            <label htmlFor="zones-search-input">Search zones</label>
+            <label htmlFor="zones-search-input">{t('Search zones')}</label>
             <input
               id="zones-search-input"
               type="search"
               value={zoneSearch}
               onChange={(event) => setZoneSearch(event.target.value)}
-              placeholder="Search by zone or district"
+              placeholder={t('Search by zone or district')}
             />
             <span className="zones-search-count">
               {filteredZones?.length ?? 0} {filteredZones?.length === 1 ? 'zone' : 'zones'}
@@ -1453,7 +1502,7 @@ export default function RiskMap() {
           </div>
         )}
         {zones === null ? (
-          <p className="zones-waiting" role="status">Waiting for live data</p>
+          <p className="zones-waiting" role="status">{t('Waiting for live data')}</p>
         ) : zones.length === 0 ? (
           <p className="zones-waiting" role="status">No watched zones available.</p>
         ) : filteredZones?.length === 0 ? (

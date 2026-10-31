@@ -1798,3 +1798,35 @@ footer {
   transform: scaleX(1);
   transition: transform 2s linear;
 }
+
+/* ---- Map page: language and text size --------------------------------- */
+
+.settings-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 13px;
+}
+
+.settings-buttons button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-buttons button[aria-pressed='true'] {
+  font-weight: 800;
+  text-decoration: underline;
+}
+
+.map-page .route-panel,
+.map-page .reports-panel,
+.map-page .zones-panel,
+.map-page .rain-card,
+.map-page .locality-search {
+  zoom: var(--ui-zoom, 1);
+}
