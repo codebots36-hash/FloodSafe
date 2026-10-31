@@ -15,6 +15,7 @@ Usage:
     python pipeline/package_api_data.py
 """
 
+import gzip
 import os
 import shutil
 import sys
@@ -63,8 +64,17 @@ def main():
             src, dst = os.path.join(OUT, folder, name), os.path.join(DEST, folder, name)
             shutil.copy2(src, dst)
             total += os.path.getsize(dst)
-    print(f"copied {len(GRAPH_FILES) + len(LAYER_FILES)} files ({total / 1e6:.1f} MB), "
-          f"{edges:,} directed edges, into {os.path.relpath(DEST, REPO)}")
+
+    # Compressed once here, not on every request: gzipping the 11 MB road layer
+    # at level 9 took ~7 s per request on a small host. mtime=0 keeps the bytes
+    # the same from run to run, so git sees no change when the layer has not.
+    for name in LAYER_FILES:
+        path = os.path.join(DEST, "layers", name)
+        with open(path, "rb") as fh, open(path + ".gz", "wb") as out:
+            out.write(gzip.compress(fh.read(), compresslevel=9, mtime=0))
+        total += os.path.getsize(path + ".gz")
+    print(f"copied {len(GRAPH_FILES) + len(LAYER_FILES)} files plus {len(LAYER_FILES)} gzipped "
+          f"layers ({total / 1e6:.1f} MB), {edges:,} directed edges, into {os.path.relpath(DEST, REPO)}")
 
 
 if __name__ == "__main__":

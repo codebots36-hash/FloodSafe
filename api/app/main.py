@@ -164,14 +164,20 @@ def get_route(
 
 
 @app.get("/layers/{name}")
-def get_layer(name: str):
+def get_layer(name: str, request: Request):
     if name not in LAYER_FILES:
         raise RoutingError("not_found", f"No layer called '{name}'.", 404)
+    headers = {"Cache-Control": "public, max-age=3600", "Vary": "Accept-Encoding"}
     for folder in LAYER_DIRS:
         path = os.path.join(folder, LAYER_FILES[name])
         if os.path.exists(path):
-            return FileResponse(path, media_type="application/geo+json",
-                                headers={"Cache-Control": "public, max-age=3600"})
+            # A deploy has the layer already gzipped (pipeline/package_api_data.py):
+            # compressing 11 MB on every request cost ~7 s on a small host. The
+            # middleware leaves a response that is already encoded alone.
+            if os.path.exists(path + ".gz") and "gzip" in request.headers.get("accept-encoding", ""):
+                return FileResponse(path + ".gz", media_type="application/geo+json",
+                                    headers={**headers, "Content-Encoding": "gzip"})
+            return FileResponse(path, media_type="application/geo+json", headers=headers)
     raise RoutingError("not_found", f"The {name} layer has not been built yet.", 404)
 
 

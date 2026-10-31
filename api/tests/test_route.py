@@ -101,3 +101,24 @@ def test_places_match_the_contracts():
         assert items and all(set(item) == expected for item in items), name
     names = {item["name"] for item in client.get("/localities").json()["items"]}
     assert {"Rishikesh", "Dehradun", "Uttarkashi"} <= names
+
+
+def test_a_deploy_serves_the_stored_gzip_without_compressing_again(monkeypatch):
+    import gzip
+    import os
+    from app import main
+    packaged = os.path.join(os.path.dirname(os.path.abspath(main.__file__)), "..", "data", "layers")
+    monkeypatch.setattr(main, "LAYER_DIRS", [packaged])
+
+    stored = client.get("/layers/road-risk", headers={"Accept-Encoding": "gzip"})
+    assert stored.headers["content-encoding"] == "gzip"
+    assert "Accept-Encoding" in stored.headers["vary"]  # a cache must not mix the two forms up
+    assert stored.json()["type"] == "FeatureCollection"  # the client undid the one gzip layer
+
+    plain = client.get("/layers/road-risk", headers={"Accept-Encoding": "identity"})
+    assert "content-encoding" not in plain.headers
+    assert plain.json() == stored.json()
+
+    # the stored file really is the layer compressed once, not twice
+    with open(os.path.join(packaged, "road_risk.geojson.gz"), "rb") as fh:
+        assert gzip.decompress(fh.read()) == plain.content
