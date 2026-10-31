@@ -336,3 +336,55 @@ footer {
 .guidance-critical {
   border-left: 5px solid #d94848;
 }
+.responder-card {
+  background: #ffffff;
+  border: 1px solid #dce5ed;
+  border-radius: 20px;
+  padding: 24px;
+  margin: 24px 0;
+  box-shadow: 0 8px 24px rgba(20, 50, 80, 0.05);
+}
+
+.responder-card h3 {
+  margin: 8px 0;
+  color: #17324d;
+}
+
+.responder-card .section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.responder-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.responder-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: #f5f8fb;
+  border-radius: 12px;
+}
+
+.responder-stats span {
+  color: #52677d;
+  font-size: 0.9rem;
+}
+
+.responder-stats strong {
+  color: #17324d;
+  font-size: 1.75rem;
+}
+
+@media (max-width: 600px) {
+  .responder-stats {
+    grid-template-columns: 1fr;
+  }
+}
