@@ -78,15 +78,43 @@ function openSms(numbers: string[], body: string) {
 
 const MAP_HASH = '#/map'
 
-function MapPage() {
+const SIZES: [TextSize, string][] = [['small', 'A-'], ['normal', 'A'], ['large', 'A+']]
+
+function SettingsButtons() {
+  const t = useT()
+  const { lang, textSize } = useSettings()
   return (
-    <div className="map-page">
+    <div className="settings-buttons">
+      <button type="button" aria-pressed={lang === 'en'} onClick={() => setSetting('lang', 'en')}>
+        English
+      </button>
+      <span>|</span>
+      <button type="button" lang="hi" aria-pressed={lang === 'hi'} onClick={() => setSetting('lang', 'hi')}>
+        हिंदी
+      </button>
+      <span>{t('Text size:')}</span>
+      {SIZES.map(([size, label]) => (
+        <button key={size} type="button" aria-pressed={textSize === size} onClick={() => setSetting('textSize', size)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function MapPage() {
+  const t = useT()
+  const { textSize } = useSettings()
+  return (
+    // The panels scale with the text size; the map itself never does, as a
+    // CSS zoom on MapLibre's canvas would put taps in the wrong place.
+    <div className="map-page" style={{ '--ui-zoom': TEXT_ZOOM[textSize] } as React.CSSProperties}>
       <header className="map-page-bar">
         <a href="#" onClick={(event) => { event.preventDefault(); window.location.hash = '' }}>
           ← FloodSafe
         </a>
-        <strong>Flood-aware map tool</strong>
-        <span className="map-tag">Surveyed data</span>
+        <strong>{t('Flood-aware map tool')}</strong>
+        <SettingsButtons />
       </header>
       <Suspense fallback={<p role="status">Loading map…</p>}>
         <RiskMap />
@@ -137,7 +165,7 @@ function App() {
 
 function Portal() {
   const t = useT()
-  const { lang, textSize, replay } = useSettings()
+  const { textSize, replay } = useSettings()
   const status = useSystemStatus(replay)
   const [sosShare, setSosShare] = useState(false)
   const holdTimer = useRef<number | null>(null)
@@ -218,27 +246,11 @@ function Portal() {
     holdTimer.current = null
   }
 
-  const sizes: [TextSize, string][] = [['small', 'A-'], ['normal', 'A'], ['large', 'A+']]
-
   return (
     <main className="dashboard" style={{ zoom: TEXT_ZOOM[textSize] }}>
       <div className="utility-bar">
         <span>{t('FloodSafe Portal — Flood-Aware Road Advisory Service')}</span>
-        <div>
-          <button type="button" aria-pressed={lang === 'en'} onClick={() => setSetting('lang', 'en')}>
-            English
-          </button>
-          <span>|</span>
-          <button type="button" lang="hi" aria-pressed={lang === 'hi'} onClick={() => setSetting('lang', 'hi')}>
-            हिंदी
-          </button>
-          <span>{t('Text size:')}</span>
-          {sizes.map(([size, label]) => (
-            <button key={size} type="button" aria-pressed={textSize === size} onClick={() => setSetting('textSize', size)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <SettingsButtons />
       </div>
 
       <header className="portal-header">
