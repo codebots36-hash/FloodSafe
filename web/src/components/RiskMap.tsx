@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   type ExpressionSpecification,
   type GeoJSONSource,
@@ -15,9 +15,14 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection, LineString } from 'geojson'
 import {
   API,
+  confirmReport,
+  createReport,
+  getReports,
   getRouteComparison,
   getZones,
   getWeather,
+  type CommunityReport,
+  type ReportKind,
   type RouteFailure,
   type RouteMode,
   type RouteResponse,
@@ -64,6 +69,39 @@ const NO_DATA = 'NO_DATA'
 /** Drawn bottom to top: Fastest sits underneath Safest. */
 const ROUTE_MODES: RouteMode[] = ['fastest', 'safest']
 
+const REPORTER_STORAGE_KEY = 'floodsafe.reporter_id'
+let fallbackReporterId: string | null = null
+
+function getOrCreateReporterId() {
+  try {
+    const saved = window.localStorage.getItem(REPORTER_STORAGE_KEY)
+    if (saved) return saved
+
+    const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+    const reporterId = `anon-${randomId}`
+    window.localStorage.setItem(REPORTER_STORAGE_KEY, reporterId)
+    return reporterId
+  } catch {
+    fallbackReporterId ??= `anon-${Math.random().toString(36).slice(2)}`
+    return fallbackReporterId
+  }
+}
+
+function errorDetail(error: unknown) {
+  return error instanceof Error ? error.message : 'Waiting for live data'
+}
+
+const REPORT_KIND_ICONS: Record<ReportKind, string> = {
+  flooded: '≈',
+  blocked: '!',
+  landslide: '▲',
+}
+
+const REPORT_KIND_LABELS: Record<ReportKind, string> = {
+  flooded: 'Flooded',
+  blocked: 'Blocked',
+  landslide: 'Landslide',
+}
 const routeIds = (mode: RouteMode) => ({
   source: `route-${mode}`,
   line: `route-${mode}-line`,
@@ -213,12 +251,21 @@ export default function RiskMap() {
   const endpointMarkers = useRef<Marker[]>([])
   const zoneMarkers = useRef<Marker[]>([])
   const noDataLabels = useRef<Marker[]>([])
+  const reportMarkers = useRef<Marker[]>([])
   const pickTarget = useRef<'from' | 'to'>('from')
 
   const [mapReady, setMapReady] = useState(false)
   const [zones, setZones] = useState<Zone[] | null>(null)
+  const [showAllZones, setShowAllZones] = useState(false)
   const [rainPoint, setRainPoint] = useState<Endpoint | null>(null)
   const [weather, setWeather] = useState<WeatherResponse | null>(null)
+  const [reports, setReports] = useState<CommunityReport[] | null>(null)
+  const [reportListError, setReportListError] = useState<string | null>(null)
+  const [reportPoint, setReportPoint] = useState<Endpoint | null>(null)
+  const [reportKind, setReportKind] = useState<ReportKind>('flooded')
+  const [reportNote, setReportNote] = useState('')
+  const [reportActionError, setReportActionError] = useState<string | null>(null)
+  const [confirmingReportId, setConfirmingReportId] = useState<string | null>(null)
   const [showAtlas, setShowAtlas] = useState(true)
   const [showRoadRisk, setShowRoadRisk] = useState(true)
   const [roadLayerStatus, setRoadLayerStatus] =
@@ -239,6 +286,26 @@ export default function RiskMap() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    let active = true
+    getReports()
+      .then((response) => {
+        if (active) {
+          setReports(response.items)
+          setReportListError(null)
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setReports(null)
+          setReportListError(errorDetail(error))
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
   useEffect(() => {
     let active = true
     getZones()
@@ -314,7 +381,18 @@ export default function RiskMap() {
         setWeather(null)
         setRainPoint(picked)
       })
-      popupContent.append(popupButton)
+      const reportButton = document.createElement('button')
+      reportButton.type = 'button'
+      reportButton.className = 'rain-here-button report-here-button'
+      reportButton.textContent = 'Report here'
+      reportButton.addEventListener('click', (popupEvent) => {
+        popupEvent.stopPropagation()
+        setReportKind('flooded')
+        setReportNote('')
+        setReportActionError(null)
+        setReportPoint(picked)
+      })
+      popupContent.append(popupButton, reportButton)
       rainPopup.current?.remove()
       rainPopup.current = new Popup({ closeButton: true, closeOnClick: false, offset: 12 })
         .setLngLat([picked.lon, picked.lat])
@@ -411,6 +489,8 @@ export default function RiskMap() {
       endpointMarkers.current = []
       zoneMarkers.current.forEach((marker) => marker.remove())
       zoneMarkers.current = []
+      reportMarkers.current.forEach((marker) => marker.remove())
+      reportMarkers.current = []
       noDataLabels.current.forEach((marker) => marker.remove())
       noDataLabels.current = []
       rainPopup.current?.remove()
@@ -509,6 +589,27 @@ export default function RiskMap() {
       )
     })
   }, [zones, mapReady])
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady) return
+
+    reportMarkers.current.forEach((marker) => marker.remove())
+    reportMarkers.current = []
+    if (!reports) return
+
+    reports.forEach((report) => {
+      const element = document.createElement('span')
+      element.className = `report-map-pin report-map-pin-${report.kind}`
+      element.textContent = REPORT_KIND_ICONS[report.kind]
+      element.title = `${REPORT_KIND_LABELS[report.kind]} near ${report.near_locality}`
+      element.setAttribute('aria-label', element.title)
+      reportMarkers.current.push(
+        new Marker({ element, anchor: 'bottom' })
+          .setLngLat([report.lon, report.lat])
+          .addTo(instance),
+      )
+    })
+  }, [reports, mapReady])
   useEffect(() => {
     if (!rainPoint) return
 
@@ -644,6 +745,41 @@ export default function RiskMap() {
     setLoading(false)
   }, [from, to])
 
+  const handleReportSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!reportPoint) return
+
+    setReportActionError(null)
+    try {
+      const report = await createReport({
+        lat: reportPoint.lat,
+        lon: reportPoint.lon,
+        kind: reportKind,
+        note: reportNote.trim(),
+        reporter_id: getOrCreateReporterId(),
+      })
+      setReports((current) => (current ? [report, ...current] : [report]))
+      setReportPoint(null)
+      setReportNote('')
+    } catch (requestError) {
+      setReportActionError(errorDetail(requestError))
+    }
+  }
+
+  const handleConfirmReport = async (reportId: string) => {
+    setReportActionError(null)
+    setConfirmingReportId(reportId)
+    try {
+      const updated = await confirmReport(reportId, getOrCreateReporterId())
+      setReports((current) =>
+        current?.map((report) => (report.id === updated.id ? updated : report)) ?? null,
+      )
+    } catch (requestError) {
+      setReportActionError(errorDetail(requestError))
+    } finally {
+      setConfirmingReportId(null)
+    }
+  }
   return (
     <div className="risk-map-wrapper">
       <RoutePanel
@@ -744,6 +880,76 @@ export default function RiskMap() {
         </div>
       </div>
 
+      <section className="reports-panel" aria-labelledby="reports-heading">
+        <div className="reports-panel-heading">
+          <div>
+            <h4 id="reports-heading">Community reports</h4>
+            <p>Recent reports from the community</p>
+          </div>
+        </div>
+
+        {reportPoint && (
+          <form className="report-form" onSubmit={handleReportSubmit}>
+            <h5>Report a problem</h5>
+            <p>Selected map point: {reportPoint.lat.toFixed(5)}, {reportPoint.lon.toFixed(5)}</p>
+            <label>
+              Problem type
+              <select value={reportKind} onChange={(event) => setReportKind(event.target.value as ReportKind)}>
+                <option value="flooded">Flooded</option>
+                <option value="blocked">Blocked</option>
+                <option value="landslide">Landslide</option>
+              </select>
+            </label>
+            <label>
+              Note (optional)
+              <textarea value={reportNote} onChange={(event) => setReportNote(event.target.value)} rows={3} maxLength={500} />
+            </label>
+            {reportActionError && <p className="report-error" role="alert">{reportActionError}</p>}
+            <div className="report-form-actions">
+              <button type="submit">Submit report</button>
+              <button type="button" onClick={() => setReportPoint(null)}>Cancel</button>
+            </div>
+          </form>
+        )}
+
+        {reportActionError && !reportPoint && <p className="report-error" role="alert">{reportActionError}</p>}
+
+        {reports === null ? (
+          <p className="reports-waiting" role={reportListError === 'Waiting for live data' ? 'status' : 'alert'}>
+            {reportListError ?? 'Waiting for live data'}
+          </p>
+        ) : reports.length === 0 ? (
+          <p className="reports-waiting" role="status">No community reports available.</p>
+        ) : (
+          <ul className="reports-list">
+            {reports.map((report) => (
+              <li className="community-report" key={report.id}>
+                <div className="community-report-heading">
+                  <span className={`report-kind-badge report-kind-${report.kind}`}>
+                    {REPORT_KIND_ICONS[report.kind]} {REPORT_KIND_LABELS[report.kind]}
+                  </span>
+                  <span className={`trust-badge trust-${report.trust}`}>{report.trust}</span>
+                </div>
+                <p className="community-report-note">{report.note || 'No note provided.'}</p>
+                <p className="community-report-meta">
+                  {new Date(report.created_at).toLocaleString()} · Near {report.near_locality}
+                </p>
+                <p className="community-report-trust-reason">{report.trust_reason}</p>
+                <div className="community-report-footer">
+                  <span>{report.confirmations} confirmations</span>
+                  <button
+                    type="button"
+                    disabled={confirmingReportId === report.id}
+                    onClick={() => handleConfirmReport(report.id)}
+                  >
+                    {confirmingReportId === report.id ? 'Confirming…' : 'Confirm'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       {rainPoint && (
         <section className="rain-card" aria-labelledby="rain-card-heading">
           <div className="rain-card-heading">
@@ -799,7 +1005,7 @@ export default function RiskMap() {
           <p className="zones-waiting" role="status">No watched zones available.</p>
         ) : (
           <ul className="zones-list">
-            {zones.map((zone) => (
+            {zones.slice(0, showAllZones ? zones.length : 4).map((zone) => (
               <li key={zone.id}>
                 <button
                   type="button"
@@ -825,10 +1031,22 @@ export default function RiskMap() {
             ))}
           </ul>
         )}
+        {zones && zones.length > 4 && (
+          <button
+            type="button"
+            className="zones-toggle"
+            aria-expanded={showAllZones}
+            onClick={() => setShowAllZones((visible) => !visible)}
+          >
+            {showAllZones ? 'Show fewer zones' : `Show all ${zones.length} zones`}
+          </button>
+        )}
       </section>
     </div>
   )
 }
+
+
 
 
 
