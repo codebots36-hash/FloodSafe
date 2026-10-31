@@ -1,31 +1,43 @@
 """FloodSafe v2 API.
 
 Serves the endpoints described in contracts/. Implemented so far:
-  GET /health   the server is up
-  GET /route    a road route between two points (mode=fastest)
+  GET /health             the server is up
+  GET /route              a road route between two points (fastest or safest)
+  GET /layers/road-risk   roads rated MODERATE or worse (GeoJSON)
+  GET /layers/atlas       surveyed hazard atlas polygons (GeoJSON)
 
-Data source: the road graph built by pipeline/build_graph.py from
-OpenStreetMap (Geofabrik India central zone, ODbL).
+Data sources: the road graph built by pipeline/build_graph.py from
+OpenStreetMap (Geofabrik India central zone, ODbL), with risk classes from
+pipeline/build_road_risk.py.
 
 Run from api/: uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
 
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.graph import get_graph
-from app.routing import RoutingError, route
+from app.routing import MAX_DETOUR, RoutingError, km_by_class, route, safest_weights, segments
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# Until pipeline/build_road_risk.py has run, no edge has a risk class. The
+API_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LAYER_DIRS = [
+    os.path.join(API_DIR, "data", "layers"),  # what a deploy unpacks
+    os.path.join(os.path.dirname(API_DIR), "pipeline", "out", "layers"),  # local build
+]
+LAYER_FILES = {"road-risk": "road_risk.geojson", "atlas": "atlas.geojson"}
+
+# Without pipeline/build_road_risk.py's files no edge has a risk class. The
 # route still reports its shape honestly and says the scores are missing,
 # rather than dressing up an unscored road as a safe one.
-RISK_NOT_READY = "Risk scores are not loaded yet, so every segment reads as LOW."
+RISK_NOT_READY = "Risk scores are not loaded, so no stretch of this route has a risk class."
 
 
 @asynccontextmanager
@@ -38,6 +50,8 @@ app = FastAPI(title="FloodSafe v2", lifespan=lifespan)
 
 # The React app runs on another laptop and origin, so allow every origin.
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# The road-risk layer is ~11 MB of GeoJSON and ~1 MB gzipped.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.exception_handler(RoutingError)
@@ -70,47 +84,58 @@ def get_route(
     depart: str | None = Query(None, description="ISO 8601; defaults to now"),
     replay: str | None = Query(None, description="YYYY-MM-DD; not implemented yet"),
 ):
-    if mode == "safest":
-        raise RoutingError(
-            "not_ready",
-            "Safest routing needs the road risk scores, which are built in a later step.",
-            501,
-        )
     if replay:
         raise RoutingError("not_ready", "Replay mode is not implemented yet.", 501)
 
     graph = get_graph()
-    result = route(graph, parse_point(from_, "from"), parse_point(to, "to"))
+    if mode == "safest" and not graph.has_risk:
+        raise RoutingError("not_ready", "Safest routing needs the road risk scores.", 501)
 
-    distance_km = round(result["distance_m"] / 1000, 1)
-    last = len(result["coordinates"]) - 1
+    start, end = parse_point(from_, "from"), parse_point(to, "to")
+    notes = []
+    result = route(graph, start, end)
+    if mode == "safest":
+        fastest_m = result["distance_m"]
+        result = route(graph, start, end, safest_weights(graph, "strict"))
+        if result["distance_m"] > MAX_DETOUR * fastest_m:
+            result = route(graph, start, end, safest_weights(graph, "mild"))
+            notes.append(f"Avoiding every risky road meant a route over {MAX_DETOUR} times "
+                         "longer, so this one uses milder risk penalties.")
+
+    km, unscored_km = km_by_class(graph, result["edge_ids"])
+    segs = segments(graph, result["edge_ids"], result["bounds"])
+    if not graph.has_risk:
+        notes.append(RISK_NOT_READY)
+    elif unscored_km:
+        notes.append(f"{unscored_km} km of this route is outside Uttarakhand and has no risk class.")
+    if km["EXTREME"]:
+        notes.append(f"{km['EXTREME']} km of this route is rated EXTREME."
+                     + (" Try the safest route." if mode == "fastest" else
+                        " No way around it was found."))
 
     return {
         "mode": mode,
         "depart": depart or datetime.now(IST).isoformat(timespec="seconds"),
         "replay": None,
-        "distance_km": distance_km,
+        "distance_km": round(result["distance_m"] / 1000, 1),
         "duration_min": round(result["duration_s"] / 60),
         "geometry": {"type": "LineString", "coordinates": result["coordinates"]},
-        "segments": [
-            {
-                "start": 0,
-                "end": last,
-                "risk_class": "LOW",
-                "risk_source": "modelled",
-                "landslide_prone": False,
-                "forecast_rain_mm": None,
-                "report_id": None,
-            }
-        ],
+        "segments": segs,
         "summary": {
-            "km_by_class": {
-                "LOW": distance_km,
-                "MODERATE": 0.0,
-                "SIGNIFICANT": 0.0,
-                "EXTREME": 0.0,
-            },
-            "extreme_segments": 0,
+            "km_by_class": km,
+            "extreme_segments": sum(s["risk_class"] == "EXTREME" for s in segs),
         },
-        "notes": [RISK_NOT_READY],
+        "notes": notes,
     }
+
+
+@app.get("/layers/{name}")
+def get_layer(name: str):
+    if name not in LAYER_FILES:
+        raise RoutingError("not_found", f"No layer called '{name}'.", 404)
+    for folder in LAYER_DIRS:
+        path = os.path.join(folder, LAYER_FILES[name])
+        if os.path.exists(path):
+            return FileResponse(path, media_type="application/geo+json",
+                                headers={"Cache-Control": "public, max-age=3600"})
+    raise RoutingError("not_found", f"The {name} layer has not been built yet.", 404)
