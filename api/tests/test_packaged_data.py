@@ -34,3 +34,11 @@ def test_the_packaged_data_has_everything_the_api_loads():
         assert os.path.exists(os.path.join(PACKAGED, "graph", name)), name
     for name in ("road_risk.geojson", "atlas.geojson"):
         assert os.path.exists(os.path.join(PACKAGED, "layers", name)), name
+
+
+def test_the_stored_gzip_of_each_layer_matches_its_layer():
+    import gzip
+    for name in ("road_risk.geojson", "atlas.geojson"):
+        path = os.path.join(PACKAGED, "layers", name)
+        with open(path, "rb") as raw, open(path + ".gz", "rb") as packed:
+            assert gzip.decompress(packed.read()) == raw.read(), f"{name}.gz is out of date"
