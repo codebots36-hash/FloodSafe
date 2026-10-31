@@ -1,5 +1,6 @@
 
 import './App.css'
+import RiskMap from './components/RiskMap'
 
 function App() {
   return (
@@ -58,14 +59,7 @@ function App() {
           </div>
           <span className="map-tag">Surveyed data</span>
         </div>
-
-        <div className="map-placeholder">
-          <div className="map-road road-one" />
-          <div className="map-road road-two" />
-          <div className="map-road road-three" />
-          <span className="map-pin">●</span>
-          <div className="map-caption">Map integration coming next</div>
-        </div>
+        <RiskMap />
       </section>
 
       <section className="warning-card">
