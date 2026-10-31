@@ -1,0 +1,288 @@
+
+.dashboard {
+  width: min(100% - 32px, 760px);
+  margin: 0 auto;
+  padding: 24px 0 32px;
+}
+
+.topbar,
+.brand,
+.status-heading,
+.section-heading,
+.warning-card,
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.brand-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: #087f8c;
+  color: white;
+  font-weight: 800;
+  font-size: 24px;
+}
+
+.brand h1,
+.brand p,
+.welcome h2,
+.welcome p,
+.status-card h3,
+.status-card p,
+.section-heading h3,
+.section-heading p,
+.warning-card h3,
+.warning-card p {
+  margin: 0;
+}
+
+.brand h1 {
+  font-size: 20px;
+}
+
+.brand p,
+.welcome > p:last-child,
+.section-heading p,
+.warning-card p {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.language-button {
+  padding: 9px 14px;
+  border: 1px solid #dbe3e8;
+  border-radius: 12px;
+  background: white;
+  color: #123047;
+  font-weight: 700;
+}
+
+.welcome {
+  margin: 36px 0 24px;
+}
+
+.eyebrow {
+  color: #087f8c;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+}
+
+.welcome h2 {
+  margin: 8px 0;
+  color: #123047;
+  font-size: clamp(26px, 5vw, 36px);
+  line-height: 1.15;
+}
+
+.status-card,
+.map-card,
+.warning-card {
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px solid #e1e9ed;
+  border-radius: 20px;
+  background: white;
+  box-shadow: 0 8px 24px #1230470a;
+}
+
+.status-heading {
+  justify-content: flex-start;
+  gap: 8px;
+  color: #526477;
+  font-size: 14px;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e5a000;
+}
+
+.status-label,
+.map-tag {
+  margin-left: auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #fff4d6;
+  color: #8a5b00;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.status-card h3 {
+  margin-top: 18px;
+  color: #123047;
+  font-size: 24px;
+}
+
+.status-card > p {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.rain-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.rain-grid div {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f3f8fa;
+}
+
+.rain-grid span,
+.rain-grid strong {
+  display: block;
+}
+
+.rain-grid span {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.rain-grid strong {
+  margin-top: 5px;
+  color: #123047;
+  font-size: 18px;
+}
+
+.status-card .data-note {
+  margin-top: 14px;
+  font-size: 11px;
+}
+
+.section-heading h3,
+.warning-card h3 {
+  color: #123047;
+  font-size: 19px;
+}
+
+.map-tag {
+  background: #e6f5f1;
+  color: #087f68;
+}
+
+.map-placeholder {
+  position: relative;
+  height: 260px;
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: 14px;
+  background:
+    linear-gradient(35deg, transparent 48%, #c4e5d7 49%, #c4e5d7 54%, transparent 55%),
+    linear-gradient(125deg, transparent 40%, #d9e9c9 41%, #d9e9c9 47%, transparent 48%),
+    #edf4e8;
+}
+
+.map-road {
+  position: absolute;
+  height: 8px;
+  border: 2px solid white;
+  border-radius: 20px;
+  background: #c3cbd2;
+}
+
+.road-one {
+  top: 45%;
+  left: -10%;
+  width: 120%;
+  transform: rotate(-13deg);
+}
+
+.road-two {
+  top: 10%;
+  left: 48%;
+  width: 80%;
+  transform: rotate(65deg);
+}
+
+.road-three {
+  top: 70%;
+  left: 5%;
+  width: 70%;
+  transform: rotate(22deg);
+}
+
+.map-pin {
+  position: absolute;
+  top: 42%;
+  left: 48%;
+  color: #087f8c;
+  font-size: 30px;
+  text-shadow: 0 0 0 5px white;
+}
+
+.map-caption {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: white;
+  color: #526477;
+  font-size: 11px;
+}
+
+.warning-card {
+  background: #fffaf0;
+  border-color: #f3e4c4;
+}
+
+.warning-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #ffedc2;
+  color: #8a5b00;
+  font-weight: 900;
+}
+
+footer {
+  gap: 12px;
+  margin-top: 28px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+@media (max-width: 480px) {
+  .dashboard {
+    width: min(100% - 24px, 760px);
+    padding-top: 16px;
+  }
+
+  .status-card,
+  .map-card,
+  .warning-card {
+    padding: 16px;
+  }
+
+  .rain-grid {
+    gap: 6px;
+  }
+
+  .rain-grid div {
+    padding: 10px 8px;
+  }
+
+  .rain-grid strong {
+    font-size: 16px;
+  }
+}
