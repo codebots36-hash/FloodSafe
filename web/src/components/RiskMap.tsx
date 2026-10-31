@@ -15,12 +15,15 @@ import type { Feature, FeatureCollection, LineString } from 'geojson'
 import {
   API,
   getRouteComparison,
+  getZones,
   type RouteFailure,
   type RouteMode,
   type RouteResponse,
+  type Zone,
 } from '../api'
 import { routeVerdict } from '../routeVerdict'
 import RoutePanel from './RoutePanel'
+import './Zones.css'
 import {
   NO_DATA_COLOUR,
   PLACES,
@@ -204,10 +207,12 @@ export default function RiskMap() {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
   const endpointMarkers = useRef<Marker[]>([])
+  const zoneMarkers = useRef<Marker[]>([])
   const noDataLabels = useRef<Marker[]>([])
   const pickTarget = useRef<'from' | 'to'>('from')
 
   const [mapReady, setMapReady] = useState(false)
+  const [zones, setZones] = useState<Zone[] | null>(null)
   const [showAtlas, setShowAtlas] = useState(true)
   const [showRoadRisk, setShowRoadRisk] = useState(true)
   const [roadLayerStatus, setRoadLayerStatus] =
@@ -228,6 +233,21 @@ export default function RiskMap() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    let active = true
+    getZones()
+      .then((response) => {
+        if (active) setZones(response.zones)
+      })
+      .catch(() => {
+        // Keep the neutral waiting state until the live endpoint is available.
+        if (active) setZones(null)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
   useEffect(() => {
     if (!mapContainer.current || map.current) return
 
@@ -365,6 +385,8 @@ export default function RiskMap() {
     return () => {
       endpointMarkers.current.forEach((marker) => marker.remove())
       endpointMarkers.current = []
+      zoneMarkers.current.forEach((marker) => marker.remove())
+      zoneMarkers.current = []
       noDataLabels.current.forEach((marker) => marker.remove())
       noDataLabels.current = []
       instance.remove()
@@ -434,6 +456,33 @@ export default function RiskMap() {
     })
   }, [from, to, mapReady])
 
+  // Live watched zones are shown as status-coloured markers only; contract
+  // sample rainfall and threshold values are intentionally never rendered.
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady) return
+
+    zoneMarkers.current.forEach((marker) => marker.remove())
+    zoneMarkers.current = []
+    if (!zones) return
+
+    zones.forEach((zone) => {
+      const element = document.createElement('button')
+      element.type = 'button'
+      element.className = `zone-marker zone-marker-${zone.status.toLowerCase()}`
+      element.title = `${zone.name} — ${zone.status}`
+      element.setAttribute('aria-label', `${zone.name}, ${zone.status}`)
+      element.addEventListener('click', (event) => {
+        event.stopPropagation()
+        instance.flyTo({ center: [zone.lon, zone.lat], zoom: 12, duration: 800 })
+      })
+      zoneMarkers.current.push(
+        new Marker({ element, anchor: 'center' })
+          .setLngLat([zone.lon, zone.lat])
+          .addTo(instance),
+      )
+    })
+  }, [zones, mapReady])
   // Draw both routes, segment by segment, and fit the map to them.
   useEffect(() => {
     const instance = map.current
@@ -651,6 +700,52 @@ export default function RiskMap() {
           </div>
         </div>
       </div>
+
+      <section className="zones-panel" aria-labelledby="zones-heading">
+        <div className="zones-panel-heading">
+          <div>
+            <h4 id="zones-heading">Watched zones</h4>
+            <p>Name, district and current status</p>
+          </div>
+          <div className="zones-status-legend" aria-label="Zone status colours">
+            <span><i className="zone-dot zone-dot-safe" /> SAFE</span>
+            <span><i className="zone-dot zone-dot-watch" /> WATCH</span>
+            <span><i className="zone-dot zone-dot-critical" /> CRITICAL</span>
+          </div>
+        </div>
+        {zones === null ? (
+          <p className="zones-waiting" role="status">Waiting for live data</p>
+        ) : zones.length === 0 ? (
+          <p className="zones-waiting" role="status">No watched zones available.</p>
+        ) : (
+          <ul className="zones-list">
+            {zones.map((zone) => (
+              <li key={zone.id}>
+                <button
+                  type="button"
+                  className="zone-row"
+                  onClick={() =>
+                    map.current?.flyTo({
+                      center: [zone.lon, zone.lat],
+                      zoom: 12,
+                      duration: 800,
+                    })
+                  }
+                >
+                  <i className={`zone-dot zone-dot-${zone.status.toLowerCase()}`} aria-hidden="true" />
+                  <span className="zone-location">
+                    <strong>{zone.name}</strong>
+                    <small>{zone.district}</small>
+                  </span>
+                  <strong className={`zone-status zone-status-${zone.status.toLowerCase()}`}>
+                    {zone.status}
+                  </strong>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }

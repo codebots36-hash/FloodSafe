@@ -1,0 +1,128 @@
+.zones-panel {
+  margin-top: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid #d6dbe3;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.zones-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.zones-panel-heading h4 {
+  margin: 0;
+  color: #17324d;
+  font-size: 1rem;
+}
+
+.zones-panel-heading p {
+  margin: 0.25rem 0 0;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.zones-status-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: #526477;
+  font-size: 0.72rem;
+}
+
+.zones-status-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.zone-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  flex: none;
+  border-radius: 50%;
+}
+
+.zone-dot-safe { background: #238636; }
+.zone-dot-watch { background: #d99a12; }
+.zone-dot-critical { background: #d93636; }
+
+.zones-waiting {
+  margin: 1rem 0 0;
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: #f5f8fb;
+  color: #526477;
+  font-size: 0.9rem;
+}
+
+.zones-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.zone-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem;
+  border: 1px solid #e1e7ed;
+  border-radius: 7px;
+  background: #fff;
+  color: #17324d;
+  text-align: left;
+  cursor: pointer;
+}
+
+.zone-row:hover,
+.zone-row:focus-visible {
+  border-color: #7892aa;
+  background: #f8fafc;
+}
+
+.zone-location {
+  display: grid;
+  gap: 0.15rem;
+  flex: 1;
+}
+
+.zone-location strong { font-size: 0.9rem; }
+.zone-location small { color: #64748b; font-size: 0.78rem; }
+
+.zone-status {
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+}
+
+.zone-status-safe { color: #187333; }
+.zone-status-watch { color: #9a6800; }
+.zone-status-critical { color: #b42323; }
+
+.zone-marker {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 5px rgb(0 0 0 / 0.55);
+  cursor: pointer;
+}
+
+.zone-marker-safe { background: #238636; }
+.zone-marker-watch { background: #d99a12; }
+.zone-marker-critical { background: #d93636; }
+
+.zone-marker:focus-visible {
+  outline: 3px solid #17324d;
+  outline-offset: 2px;
+}

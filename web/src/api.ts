@@ -3,6 +3,38 @@ export const API = import.meta.env.VITE_API_URL
 export type RiskClass = 'LOW' | 'MODERATE' | 'SIGNIFICANT' | 'EXTREME'
 export type RiskSource = 'surveyed' | 'modelled'
 export type RouteMode = 'fastest' | 'safest'
+export type ZoneStatus = 'SAFE' | 'WATCH' | 'CRITICAL'
+
+export interface ZoneRainThresholds {
+  h1: number
+  h3: number
+  h24: number
+}
+
+export interface Zone {
+  id: string
+  name: string
+  parent: string | null
+  district: string
+  lat: number
+  lon: number
+  hazard_class: RiskClass
+  risk_source: RiskSource
+  status: ZoneStatus
+  rain_mm: ZoneRainThresholds & { antecedent_48h: number }
+  watch: ZoneRainThresholds
+  critical: ZoneRainThresholds
+  soil_group: 'A' | 'B' | 'C' | 'D'
+  catchment_km2: number
+}
+
+export interface ZonesResponse {
+  as_of: string
+  source: 'live' | 'relay' | 'replay'
+  replay: string | null
+  threshold_basis: string
+  zones: Zone[]
+}
 
 export interface RouteSegment {
   start: number
@@ -39,6 +71,34 @@ export interface ApiError {
   detail: string
 }
 
+/** Fetch watched zones without falling back to the example contract file. */
+export async function getZones(): Promise<ZonesResponse> {
+  if (!API) {
+    throw new Error(
+      'VITE_API_URL is not set, so the app does not know where the FloodSafe API is.',
+    )
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`${API}/zones`)
+  } catch {
+    throw new Error(`Could not reach the FloodSafe API at ${API}.`)
+  }
+
+  if (!response.ok) {
+    let detail = `Request failed with status ${response.status}`
+    try {
+      const body: ApiError = await response.json()
+      if (body?.detail) detail = body.detail
+    } catch {
+      // Keep the status text when the response is not the documented error shape.
+    }
+    throw new Error(detail)
+  }
+
+  return (await response.json()) as ZonesResponse
+}
 export interface LatLon {
   lat: number
   lon: number
