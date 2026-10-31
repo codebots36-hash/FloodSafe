@@ -33,7 +33,10 @@ API = "https://api.open-meteo.com/v1/forecast"
 
 GRID = 0.1              # points this close share a reading (~11 km, Open-Meteo's own grid)
 PAST_DAYS = 4           # enough to cover the trailing 72 h whatever the hour
-FORECAST_DAYS = 2       # enough for the next 24 h
+# Open-Meteo counts "today" in UTC. Between midnight and 05:30 IST a 2-day series
+# ends at 23:00 tonight, i.e. 23 hours ahead at 00:00 and 18 at 05:00 IST, short
+# of the 24 the contract promises. Three days always reaches past tomorrow.
+FORECAST_DAYS = 3
 FORECAST_HOURS = 24
 TRAILING_HOURS = 72
 TIMEOUT_S = 20

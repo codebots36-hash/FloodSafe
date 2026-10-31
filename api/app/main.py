@@ -29,6 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import reports
 from app.graph import get_graph
@@ -80,6 +81,22 @@ async def bad_request(_request, exc: RequestValidationError):
     field = ".".join(str(p) for p in first["loc"] if p not in ("body", "query", "path"))
     detail = f"{field}: {first['msg']}" if field else first["msg"]
     return JSONResponse(status_code=400, content={"error": "bad_request", "detail": detail})
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error(_request, exc: StarletteHTTPException):
+    """An unknown address or wrong method, in the same {error, detail} shape."""
+    known = {404: ("not_found", "There is no endpoint at that address. Open / for where to start."),
+             405: ("method_not_allowed", "That endpoint does not accept this method.")}
+    code, detail = known.get(exc.status_code, ("http_error", str(exc.detail)))
+    return JSONResponse(status_code=exc.status_code, content={"error": code, "detail": detail},
+                        headers=getattr(exc, "headers", None))
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    return {"name": "FloodSafe v2 API", "health": "/health", "docs": "/docs",
+            "contracts": "https://github.com/codebots36-hash/FloodSafe/tree/main/contracts"}
 
 
 def parse_point(text, name):
