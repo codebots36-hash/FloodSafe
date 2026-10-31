@@ -2,6 +2,7 @@
 import './App.css'
 import RiskMap from './components/RiskMap'
 import FloodGuidance from './components/FloodGuidance'
+import OfficialWarnings from './components/OfficialWarnings'
 
 function App() {
   return (
@@ -65,15 +66,7 @@ function App() {
       <section className="guidance-section">
         <FloodGuidance status="WATCH" />
       </section>
-      <section className="warning-card">
-        <div>
-          <p className="eyebrow">SAFETY</p>
-          <h3>Official warnings</h3>
-          <p>Live warning feed will appear here when connected.</p>
-        </div>
-        <span className="warning-icon">!</span>
-      </section>
-
+      <OfficialWarnings />
       <footer>
         <span>FloodSafe</span>
         <span>Use official guidance during emergencies.</span>
