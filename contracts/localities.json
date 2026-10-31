@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "rishikesh",
+      "name": "Rishikesh",
+      "parent": null,
+      "district": "Dehradun",
+      "lat": 30.0869,
+      "lon": 78.2676
+    },
+    {
+      "id": "dehradun",
+      "name": "Dehradun",
+      "parent": null,
+      "district": "Dehradun",
+      "lat": 30.3165,
+      "lon": 78.0322
+    }
+  ]
+}

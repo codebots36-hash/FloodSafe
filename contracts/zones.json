@@ -1,0 +1,24 @@
+{
+  "as_of": "2026-10-31T13:00:00+05:30",
+  "source": "live",
+  "replay": null,
+  "threshold_basis": "Each zone's WATCH and CRITICAL rain depths depend on its hazard class and soil group.",
+  "zones": [
+    {
+      "id": "rishikesh",
+      "name": "Rishikesh",
+      "parent": null,
+      "district": "Dehradun",
+      "lat": 30.0869,
+      "lon": 78.2676,
+      "hazard_class": "SIGNIFICANT",
+      "risk_source": "surveyed",
+      "status": "WATCH",
+      "rain_mm": { "h1": 4.2, "h3": 28.0, "h24": 38.5, "antecedent_48h": 22.0 },
+      "watch": { "h1": 10.0, "h3": 25.0, "h24": 60.0 },
+      "critical": { "h1": 20.0, "h3": 45.0, "h24": 100.0 },
+      "soil_group": "C",
+      "catchment_km2": 112.5
+    }
+  ]
+}

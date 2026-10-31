@@ -1,0 +1,11 @@
+{
+  "as_of": "2026-10-31T13:00:00+05:30",
+  "reports_last_24h": 7,
+  "critical_zones": [
+    { "id": "rishikesh", "name": "Rishikesh", "status": "CRITICAL" }
+  ],
+  "shelters_count": 42,
+  "sos_pings": [
+    { "lat": 30.0869, "lon": 78.2676, "time": "2026-10-31T12:55:00+05:30" }
+  ]
+}

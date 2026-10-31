@@ -1,7 +1,11 @@
-# FloodSafe
+# FloodSafe v2
 
-Flood-aware navigation for Uttarakhand: routes you around flash-flood and landslide-prone roads using real hazard, terrain and rainfall data.
+FloodSafe is flood-aware navigation for Uttarakhand, India. It routes people around roads at risk of flash floods and landslides, using real, published hazard, terrain and rainfall data, and gives live rain, official warnings, community reports, shelters and an SOS message for when things go wrong.
 
-## Project status
+## Team
 
-Development setup in progress.
+- Shiv: data pipeline and backend API
+- Waheed: React app
+- Shourya: React app
+
+## Data sources and licences

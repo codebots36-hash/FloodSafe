@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "osm:node/1",
+      "name": "Example relief camp",
+      "kind": "shelter",
+      "lat": 30.0869,
+      "lon": 78.2676,
+      "near_locality": "Rishikesh",
+      "source": "OpenStreetMap"
+    }
+  ]
+}

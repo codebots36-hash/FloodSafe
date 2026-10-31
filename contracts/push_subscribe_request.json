@@ -1,0 +1,11 @@
+{
+  "subscription": {
+    "endpoint": "https://fcm.googleapis.com/fcm/send/example-endpoint",
+    "expirationTime": null,
+    "keys": {
+      "p256dh": "example-p256dh-key",
+      "auth": "example-auth-secret"
+    }
+  },
+  "zone_id": "rishikesh"
+}

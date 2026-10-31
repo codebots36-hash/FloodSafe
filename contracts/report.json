@@ -1,0 +1,12 @@
+{
+  "id": "r_7f3a2c",
+  "lat": 30.0869,
+  "lon": 78.2676,
+  "kind": "flooded",
+  "note": "Water over the road near the bridge",
+  "created_at": "2026-10-31T12:40:00+05:30",
+  "trust": "verified",
+  "trust_reason": "Confirmed by 3 people nearby",
+  "confirmations": 3,
+  "near_locality": "Rishikesh"
+}

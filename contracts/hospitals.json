@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "osm:way/1",
+      "name": "Example district hospital",
+      "kind": "hospital",
+      "lat": 30.3165,
+      "lon": 78.0322,
+      "near_locality": "Dehradun",
+      "source": "OpenStreetMap"
+    }
+  ]
+}

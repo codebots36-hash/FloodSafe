@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+dist/
+.env
+.env.local
+pipeline/raw/
+pipeline/out/
+pipeline/cache/
+*.tif
+*.osm.pbf
+*.tar.gz
+.claude/settings.local.json
+.DS_Store

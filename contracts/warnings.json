@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "as_of": "2026-10-31T13:00:00+05:30",
+  "alerts": [
+    {
+      "id": "example-alert-1",
+      "headline": "Heavy rain warning for Dehradun district",
+      "headline_hi": "देहरादून जिले के लिए भारी वर्षा की चेतावनी",
+      "severity": "Severe",
+      "event": "Heavy Rain",
+      "area": "Dehradun",
+      "sender": "India Meteorological Department",
+      "effective": "2026-10-31T08:30:00+05:30",
+      "expires": "2026-11-01T08:30:00+05:30",
+      "link": "https://sachet.ndma.gov.in/"
+    }
+  ]
+}

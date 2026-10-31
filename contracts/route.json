@@ -1,0 +1,57 @@
+{
+  "mode": "safest",
+  "depart": "2026-10-31T14:00:00+05:30",
+  "replay": null,
+  "distance_km": 44.2,
+  "duration_min": 71,
+  "geometry": {
+    "type": "LineString",
+    "coordinates": [
+      [78.2676, 30.0869],
+      [78.2087, 30.1443],
+      [78.1499, 30.2017],
+      [78.0322, 30.3165]
+    ]
+  },
+  "segments": [
+    {
+      "start": 0,
+      "end": 1,
+      "risk_class": "LOW",
+      "risk_source": "modelled",
+      "landslide_prone": false,
+      "forecast_rain_mm": 0.4,
+      "report_id": null
+    },
+    {
+      "start": 1,
+      "end": 2,
+      "risk_class": "SIGNIFICANT",
+      "risk_source": "surveyed",
+      "landslide_prone": true,
+      "forecast_rain_mm": 6.2,
+      "report_id": "r_7f3a2c"
+    },
+    {
+      "start": 2,
+      "end": 3,
+      "risk_class": "MODERATE",
+      "risk_source": "modelled",
+      "landslide_prone": false,
+      "forecast_rain_mm": null,
+      "report_id": null
+    }
+  ],
+  "summary": {
+    "km_by_class": {
+      "LOW": 12.1,
+      "MODERATE": 24.0,
+      "SIGNIFICANT": 8.1,
+      "EXTREME": 0.0
+    },
+    "extreme_segments": 0
+  },
+  "notes": [
+    "A community report marks one segment as flooded."
+  ]
+}
