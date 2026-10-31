@@ -302,7 +302,10 @@ def main():
         "undirected_edges": int(edge_keep.sum()),
         "directed_edges": int(len(edge_u)),
         "geometry_points": int(len(geom_lonlat)),
-        "components_found": int(n_comp),
+        # Counted over every raw node slot. Most raw nodes were shape points
+        # swallowed into a merged chain, so they survive here as isolated
+        # one-node components; that is why this number is close to raw_nodes.
+        "components_including_isolated_nodes": int(n_comp),
         "geometry_layout": (
             "edge_geom_offsets/edge_geom_lonlat are indexed by UNDIRECTED edge. "
             "A directed edge points at its span via edge_geom_id, and "
