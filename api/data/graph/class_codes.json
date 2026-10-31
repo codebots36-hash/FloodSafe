@@ -1,0 +1,38 @@
+{
+  "codes": {
+    "0": "living_street",
+    "1": "motorway",
+    "2": "motorway_link",
+    "3": "primary",
+    "4": "primary_link",
+    "5": "residential",
+    "6": "road",
+    "7": "secondary",
+    "8": "secondary_link",
+    "9": "tertiary",
+    "10": "tertiary_link",
+    "11": "trunk",
+    "12": "trunk_link",
+    "13": "unclassified"
+  },
+  "speed_kmh": {
+    "motorway": 80,
+    "motorway_link": 50,
+    "trunk": 60,
+    "trunk_link": 40,
+    "primary": 50,
+    "primary_link": 35,
+    "secondary": 40,
+    "secondary_link": 30,
+    "tertiary": 30,
+    "tertiary_link": 25,
+    "unclassified": 25,
+    "residential": 25,
+    "living_street": 15,
+    "service": 15,
+    "track": 15,
+    "road": 25
+  },
+  "default_speed_kmh": 25,
+  "note": "Speeds are planning assumptions for hill roads, not measured."
+}

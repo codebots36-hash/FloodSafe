@@ -37,9 +37,11 @@ from app.zones import current as current_zones
 IST = timezone(timedelta(hours=5, minutes=30))
 
 API_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Same order as the graph (app/graph.py): a local build first, else the
+# copy made by pipeline/package_api_data.py.
 LAYER_DIRS = [
-    os.path.join(API_DIR, "data", "layers"),  # what a deploy unpacks
     os.path.join(os.path.dirname(API_DIR), "pipeline", "out", "layers"),  # local build
+    os.path.join(API_DIR, "data", "layers"),  # what a deploy runs on
 ]
 LAYER_FILES = {"road-risk": "road_risk.geojson", "atlas": "atlas.geojson"}
 DATA_DIR = os.path.join(API_DIR, "data")  # pipeline/build_places.py writes here

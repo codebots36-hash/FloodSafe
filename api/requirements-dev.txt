@@ -1,5 +1,5 @@
 # Test-only dependencies. Not installed on the deploy, which uses
 # requirements.txt, so the image stays small.
 -r requirements.txt
-pytest
-httpx
+pytest==9.2.0
+httpx==0.28.1
