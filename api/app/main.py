@@ -6,6 +6,9 @@ Serves the endpoints described in contracts/. Implemented so far:
   GET /layers/road-risk   roads rated MODERATE or worse (GeoJSON)
   GET /layers/atlas       surveyed hazard atlas polygons (GeoJSON)
   GET /shelters, /hospitals, /localities   places from OpenStreetMap
+  GET /weather            live rainfall for a point (Open-Meteo)
+  GET /zones              watched places and their rain status
+  GET /reports, POST /reports, POST /reports/{id}/confirm   community reports
 
 Data sources: the road graph built by pipeline/build_graph.py from
 OpenStreetMap (Geofabrik India central zone, ODbL), with risk classes from
@@ -15,16 +18,21 @@ Run from api/: uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
 
 import os
+import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
+from app import reports
 from app.graph import get_graph
 from app.routing import MAX_DETOUR, RoutingError, km_by_class, route, safest_weights, segments
+from app.weather import WeatherUnavailable, parse_day, readings, replayed
+from app.zones import current as current_zones
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -61,6 +69,15 @@ async def routing_error(_request, exc: RoutingError):
     return JSONResponse(status_code=exc.status, content={"error": exc.code, "detail": exc.detail})
 
 
+@app.exception_handler(RequestValidationError)
+async def bad_request(_request, exc: RequestValidationError):
+    """Every error has the {error, detail} shape of contracts/error.json."""
+    first = exc.errors()[0]
+    field = ".".join(str(p) for p in first["loc"] if p not in ("body", "query", "path"))
+    detail = f"{field}: {first['msg']}" if field else first["msg"]
+    return JSONResponse(status_code=400, content={"error": "bad_request", "detail": detail})
+
+
 def parse_point(text, name):
     try:
         lat_text, lon_text = text.split(",")
@@ -86,9 +103,7 @@ def get_route(
     depart: str | None = Query(None, description="ISO 8601; defaults to now"),
     replay: str | None = Query(None, description="YYYY-MM-DD; not implemented yet"),
 ):
-    if replay:
-        raise RoutingError("not_ready", "Replay mode is not implemented yet.", 501)
-
+    day = replay_day(replay)
     graph = get_graph()
     if mode == "safest" and not graph.has_risk:
         raise RoutingError("not_ready", "Safest routing needs the road risk scores.", 501)
@@ -106,6 +121,21 @@ def get_route(
 
     km, unscored_km = km_by_class(graph, result["edge_ids"])
     segs = segments(graph, result["edge_ids"], result["bounds"])
+    if day:
+        # Road risk comes from the terrain and the hazard atlas, neither of
+        # which changes with the date, so replaying one does not move a route.
+        notes.append(f"Replaying {day.isoformat()}. A road's risk class comes from its terrain "
+                     "and the hazard atlas, so it is the same on any date.")
+    else:  # reports are about now, so a replayed past date has none
+        try:
+            found, verified = reports.attach(result["coordinates"], segs)
+        except sqlite3.Error as exc:
+            print(f"[reports] could not read reports for a route: {exc}", flush=True)
+            notes.append("Community reports could not be read, so none are shown on this route.")
+        else:
+            if found:
+                notes.append(f"{found} community report{'s' if found != 1 else ''} "
+                             f"lie{'s' if found == 1 else ''} on this route ({verified} verified).")
     if not graph.has_risk:
         notes.append(RISK_NOT_READY)
     elif unscored_km:
@@ -118,7 +148,7 @@ def get_route(
     return {
         "mode": mode,
         "depart": depart or datetime.now(IST).isoformat(timespec="seconds"),
-        "replay": None,
+        "replay": day.isoformat() if day else None,
         "distance_km": round(result["distance_m"] / 1000, 1),
         "duration_min": round(result["duration_s"] / 60),
         "geometry": {"type": "LineString", "coordinates": result["coordinates"]},
@@ -149,6 +179,56 @@ def places_file(name):
         raise RoutingError("not_found", f"The {name} list has not been built yet.", 404)
     return FileResponse(path, media_type="application/json",
                         headers={"Cache-Control": "public, max-age=3600"})
+
+
+def replay_day(replay):
+    """A replay date, or None for live data."""
+    if not replay:
+        return None
+    try:
+        return parse_day(replay)
+    except RuntimeError as exc:
+        raise RoutingError("bad_replay", str(exc))
+
+
+@app.get("/weather")
+def get_weather(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    replay: str | None = Query(None, description="YYYY-MM-DD; the rain that fell that day"),
+):
+    day = replay_day(replay)
+    try:
+        return (replayed([(lat, lon)], day) if day else readings([(lat, lon)]))[0]
+    except WeatherUnavailable as exc:
+        raise RoutingError("weather_unavailable", str(exc), 503)
+
+
+@app.get("/zones")
+def get_zones(replay: str | None = Query(None, description="YYYY-MM-DD; the rain that fell that day")):
+    try:
+        return current_zones(replay_day(replay))
+    except WeatherUnavailable as exc:
+        raise RoutingError("weather_unavailable", str(exc), 503)
+
+
+def client_ip(request: Request):
+    return request.client.host if request.client else "unknown"
+
+
+@app.get("/reports")
+def get_reports():
+    return {"items": reports.active()}
+
+
+@app.post("/reports")
+def post_report(body: reports.ReportCreate, request: Request):
+    return reports.create(get_graph(), body, client_ip(request))
+
+
+@app.post("/reports/{report_id}/confirm")
+def post_confirm(report_id: str, body: reports.ReportConfirm, request: Request):
+    return reports.confirm(report_id, body.reporter_id, client_ip(request))
 
 
 @app.get("/shelters")

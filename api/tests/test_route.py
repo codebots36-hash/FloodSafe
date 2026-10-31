@@ -73,6 +73,14 @@ def test_an_unknown_layer_is_404():
     assert response.json()["error"] == "not_found"
 
 
+def test_replaying_a_date_does_not_move_a_route():
+    body = client.get(f"/route?from={RISHIKESH}&to={UTTARKASHI}&replay=2013-06-17").json()
+    assert body["replay"] == "2013-06-17"
+    assert any("2013-06-17" in note for note in body["notes"])
+    live = client.get(f"/route?from={RISHIKESH}&to={UTTARKASHI}").json()
+    assert body["distance_km"] == live["distance_km"]
+
+
 def test_a_point_at_sea_is_refused():
     response = client.get(f"/route?from={RISHIKESH}&to={BAY_OF_BENGAL}")
     assert response.status_code == 400

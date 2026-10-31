@@ -1,0 +1,163 @@
+{
+ "built": "2026-10-31",
+ "basis": "Rain depths that only a set share of quiet monsoon days reach: 15% for WATCH and 5% for CRITICAL, measured on 24 monsoons of ERA5 rainfall against the floods the India Flood Inventory records for each district. Each zone's own depths are then shifted by its hazard class and soil group.",
+ "sources": {
+  "rainfall": "ERA5 hourly precipitation via the Open-Meteo archive, 13 districts, 2000-2023 monsoons",
+  "floods": "India Flood Inventory v3 (Saharia et al. 2021), CC BY-NC 4.0"
+ },
+ "labels": {
+  "flood_district_days": 206,
+  "quiet_district_days": 37858
+ },
+ "roc_auc": {
+  "h1": 0.69,
+  "h3": 0.715,
+  "h24": 0.7,
+  "antecedent_48h": 0.599
+ },
+ "levels": {
+  "watch": {
+   "mm": {
+    "h1": 4.6,
+    "h3": 10.1,
+    "h24": 40.1
+   },
+   "target_POFD": 0.15,
+   "hits": 73,
+   "misses": 133,
+   "false_alarms": 5661,
+   "correct_negatives": 32197,
+   "POD": 0.354,
+   "POFD": 0.1495,
+   "FAR": 0.987,
+   "TSS": 0.205
+  },
+  "critical": {
+   "mm": {
+    "h1": 7.8,
+    "h3": 19.8,
+    "h24": 77.1
+   },
+   "target_POFD": 0.05,
+   "hits": 43,
+   "misses": 163,
+   "false_alarms": 1886,
+   "correct_negatives": 35972,
+   "POD": 0.209,
+   "POFD": 0.0498,
+   "FAR": 0.978,
+   "TSS": 0.159
+  }
+ },
+ "operating_curve": [
+  {
+   "target_POFD": 0.02,
+   "mm": {
+    "h1": 11.1,
+    "h3": 30.9,
+    "h24": 116.2
+   },
+   "hits": 22,
+   "misses": 184,
+   "false_alarms": 757,
+   "correct_negatives": 37101,
+   "POD": 0.107,
+   "POFD": 0.02,
+   "FAR": 0.972,
+   "TSS": 0.087
+  },
+  {
+   "target_POFD": 0.05,
+   "mm": {
+    "h1": 7.8,
+    "h3": 19.8,
+    "h24": 77.1
+   },
+   "hits": 43,
+   "misses": 163,
+   "false_alarms": 1886,
+   "correct_negatives": 35972,
+   "POD": 0.209,
+   "POFD": 0.0498,
+   "FAR": 0.978,
+   "TSS": 0.159
+  },
+  {
+   "target_POFD": 0.1,
+   "mm": {
+    "h1": 5.7,
+    "h3": 13.1,
+    "h24": 53.0
+   },
+   "hits": 60,
+   "misses": 146,
+   "false_alarms": 3769,
+   "correct_negatives": 34089,
+   "POD": 0.291,
+   "POFD": 0.0996,
+   "FAR": 0.984,
+   "TSS": 0.192
+  },
+  {
+   "target_POFD": 0.15,
+   "mm": {
+    "h1": 4.6,
+    "h3": 10.1,
+    "h24": 40.1
+   },
+   "hits": 73,
+   "misses": 133,
+   "false_alarms": 5661,
+   "correct_negatives": 32197,
+   "POD": 0.354,
+   "POFD": 0.1495,
+   "FAR": 0.987,
+   "TSS": 0.205
+  },
+  {
+   "target_POFD": 0.2,
+   "mm": {
+    "h1": 3.8,
+    "h3": 8.4,
+    "h24": 32.2
+   },
+   "hits": 86,
+   "misses": 120,
+   "false_alarms": 7543,
+   "correct_negatives": 30315,
+   "POD": 0.417,
+   "POFD": 0.1992,
+   "FAR": 0.989,
+   "TSS": 0.218
+  },
+  {
+   "target_POFD": 0.3,
+   "mm": {
+    "h1": 2.9,
+    "h3": 6.1,
+    "h24": 22.3
+   },
+   "hits": 120,
+   "misses": 86,
+   "false_alarms": 11344,
+   "correct_negatives": 26514,
+   "POD": 0.583,
+   "POFD": 0.2996,
+   "FAR": 0.99,
+   "TSS": 0.283
+  }
+ ],
+ "hazard_factor": {
+  "LOW": 1.1,
+  "MODERATE": 1.0,
+  "SIGNIFICANT": 0.9,
+  "EXTREME": 0.8
+ },
+ "soil_factor": {
+  "A": 1.15,
+  "B": 1.05,
+  "C": 0.95,
+  "D": 0.85
+ },
+ "adjustment_note": "hazard_factor and soil_factor are a modelling choice following flash flood guidance practice, not a fitted result: the data cannot support a separate threshold per zone."
+}
