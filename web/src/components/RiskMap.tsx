@@ -7,6 +7,7 @@ import {
   Map as MapLibreMap,
   Marker,
   NavigationControl,
+  Popup,
   setWorkerUrl,
 } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
@@ -14,7 +15,15 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection, LineString } from 'geojson'
 import {
   API,
+  getHospitals,
+  getLocalities,
+  getReports,
   getRouteComparison,
+  getShelters,
+  type Locality,
+  type MapPlace,
+  type Report,
+  type ReportKind,
   type RouteFailure,
   type RouteMode,
   type RouteResponse,
@@ -52,6 +61,39 @@ function classColour(property: 'risk_class' | 'hazard_class'): ExpressionSpecifi
 }
 
 type RoadLayerStatus = 'loading' | 'ready' | 'failed'
+
+// The road-risk GeoJSON is about 11 MB. On a phone it starts off and is only
+// downloaded when the user switches it on.
+const IS_PHONE =
+  typeof window !== 'undefined' && window.matchMedia('(max-width: 600px)').matches
+
+function addRoadLayer(instance: MapLibreMap) {
+  if (instance.getSource('road-risk')) return
+
+  instance.addSource('road-risk', {
+    type: 'geojson',
+    data: roadRiskUrl,
+    // Coarser simplification and a lower tiling ceiling keep the worker's
+    // per-tile work and the geometry sent to the GPU small.
+    tolerance: 1.5,
+    maxzoom: 12,
+    buffer: 32,
+  })
+
+  instance.addLayer({
+    id: 'road-risk-line',
+    type: 'line',
+    source: 'road-risk',
+    minzoom: 8,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': classColour('risk_class'),
+      'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 12, 3],
+      // Surveyed roads are solid; modelled ones are drawn lighter.
+      'line-opacity': ['match', ['get', 'risk_source'], 'surveyed', 0.6, 0.3],
+    },
+  })
+}
 
 const NO_DATA = 'NO_DATA'
 
@@ -200,21 +242,121 @@ function addRouteLayers(instance: MapLibreMap, mode: RouteMode) {
   })
 }
 
-export default function RiskMap() {
+const PLACE_LAYERS = {
+  shelters: { source: 'shelters', layer: 'shelters-circle', colour: '#1f6fb5' },
+  hospitals: { source: 'hospitals', layer: 'hospitals-circle', colour: '#c0392b' },
+} as const
+
+const REPORT_LOOK: Record<ReportKind, { colour: string; glyph: string; label: string }> = {
+  flooded: { colour: '#1f6fb5', glyph: '≈', label: 'Flooded' },
+  blocked: { colour: '#e67e22', glyph: '✕', label: 'Road blocked' },
+  landslide: { colour: '#8d5a2b', glyph: '▲', label: 'Landslide' },
+}
+
+function popupBody(parts: (string | HTMLElement)[]) {
+  const root = document.createElement('div')
+  root.style.cssText = 'font-size:13px;line-height:1.4;max-width:220px'
+  parts.forEach((part) => {
+    if (typeof part === 'string') {
+      const line = document.createElement('div')
+      line.textContent = part
+      root.appendChild(line)
+    } else {
+      root.appendChild(part)
+    }
+  })
+  return root
+}
+
+function strongLine(text: string) {
+  const line = document.createElement('strong')
+  line.textContent = text
+  line.style.display = 'block'
+  return line
+}
+
+function reportPopup(report: Report) {
+  const look = REPORT_LOOK[report.kind]
+  const badge = document.createElement('span')
+  badge.textContent = report.trust === 'verified' ? 'Verified' : 'Unverified'
+  badge.title = report.trust_reason
+  badge.style.cssText =
+    'display:inline-block;margin:4px 0;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;color:#fff;background:' +
+    (report.trust === 'verified' ? '#2e7d32' : '#8a8f98')
+
+  const when = new Date(report.created_at)
+  return popupBody([
+    strongLine(look.label),
+    report.note || 'No note left.',
+    Number.isNaN(when.getTime()) ? '' : when.toLocaleString(),
+    badge,
+    report.trust_reason,
+    `${report.confirmations} confirmation${report.confirmations === 1 ? '' : 's'}`,
+    report.near_locality ? `Near ${report.near_locality}` : '',
+  ].filter((part) => part !== ''))
+}
+
+interface RiskMapProps {
+  /** Called with the picked lat/lon after "Report a problem" is armed and the map is clicked. */
+  onPickReportLocation?: (lat: number, lon: number) => void
+  /** Bump this after a report is posted: reports are refetched and a planned route is redone. */
+  reportsRefreshKey?: number
+  /** The point being reported; drawn as a red pin until the form is sent or cancelled. */
+  pickedPoint?: { lat: number; lon: number } | null
+}
+
+export default function RiskMap({
+  onPickReportLocation,
+  reportsRefreshKey = 0,
+  pickedPoint = null,
+}: RiskMapProps = {}) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
   const endpointMarkers = useRef<Marker[]>([])
   const noDataLabels = useRef<Marker[]>([])
+  const reportMarkers = useRef<Marker[]>([])
+  const pickedMarker = useRef<Marker | null>(null)
   const pickTarget = useRef<'from' | 'to'>('from')
+  const reportModeRef = useRef(false)
+  const placeVisibility = useRef({ shelters: true, hospitals: true })
+  const onPickRef = useRef(onPickReportLocation)
+  useEffect(() => {
+    onPickRef.current = onPickReportLocation
+  }, [onPickReportLocation])
+
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  useEffect(() => {
+    const sync = () => setIsFullscreen(document.fullscreenElement === stageRef.current)
+    document.addEventListener('fullscreenchange', sync)
+    return () => document.removeEventListener('fullscreenchange', sync)
+  }, [])
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen()
+    else void stageRef.current?.requestFullscreen?.()
+  }
+
+  const [reportMode, setReportMode] = useState(false)
+  const [showShelters, setShowShelters] = useState(true)
+  const [showHospitals, setShowHospitals] = useState(true)
+  const [showReports, setShowReports] = useState(true)
+  const [placesError, setPlacesError] = useState<string | null>(null)
+  const [reports, setReports] = useState<Report[]>([])
+  const [reportsError, setReportsError] = useState<string | null>(null)
+  const [localities, setLocalities] = useState<Locality[]>([])
+  const [searchText, setSearchText] = useState('')
 
   const [mapReady, setMapReady] = useState(false)
   const [showAtlas, setShowAtlas] = useState(true)
-  const [showRoadRisk, setShowRoadRisk] = useState(true)
-  const [roadLayerStatus, setRoadLayerStatus] =
-    useState<RoadLayerStatus>('loading')
+  const [showRoadRisk, setShowRoadRisk] = useState(!IS_PHONE)
+  const [roadLayerStatus, setRoadLayerStatus] = useState<RoadLayerStatus>(
+    IS_PHONE ? 'ready' : 'loading',
+  )
   const [layerError, setLayerError] = useState<string | null>(null)
   // Read when the layers are added, so a toggle flipped before then sticks.
-  const layerVisibility = useRef({ atlas: true, roadRisk: true })
+  const layerVisibility = useRef({ atlas: true, roadRisk: !IS_PHONE })
 
   const [from, setFrom] = useState<Endpoint | null>(null)
   const [to, setTo] = useState<Endpoint | null>(null)
@@ -260,6 +402,25 @@ export default function RiskMap() {
     instance.addControl(new NavigationControl(), 'top-right')
 
     instance.on('click', (event) => {
+      if (reportModeRef.current) {
+        const lat = Number(event.lngLat.lat.toFixed(5))
+        const lon = Number(event.lngLat.lng.toFixed(5))
+        reportModeRef.current = false
+        setReportMode(false)
+        onPickRef.current?.(lat, lon)
+        return
+      }
+
+      const placeLayers = Object.values(PLACE_LAYERS)
+        .map((item) => item.layer)
+        .filter((id) => instance.getLayer(id))
+      if (
+        placeLayers.length > 0 &&
+        instance.queryRenderedFeatures(event.point, { layers: placeLayers }).length > 0
+      ) {
+        return
+      }
+
       const target = pickTarget.current
       const picked: Endpoint = {
         label: `Picked ${event.lngLat.lat.toFixed(4)}, ${event.lngLat.lng.toFixed(4)}`,
@@ -318,24 +479,7 @@ export default function RiskMap() {
         },
       })
 
-      instance.addSource('road-risk', { type: 'geojson', data: roadRiskUrl })
-
-      instance.addLayer({
-        id: 'road-risk-line',
-        type: 'line',
-        source: 'road-risk',
-        layout: {
-          visibility: visibility(layerVisibility.current.roadRisk),
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
-        paint: {
-          'line-color': classColour('risk_class'),
-          'line-width': ['interpolate', ['linear'], ['zoom'], 7, 1, 12, 3],
-          // Surveyed roads are solid; modelled ones are drawn lighter.
-          'line-opacity': ['match', ['get', 'risk_source'], 'surveyed', 0.6, 0.3],
-        },
-      })
+      if (layerVisibility.current.roadRisk) addRoadLayer(instance)
 
       bringRouteToFront(instance)
     })
@@ -367,6 +511,10 @@ export default function RiskMap() {
       endpointMarkers.current = []
       noDataLabels.current.forEach((marker) => marker.remove())
       noDataLabels.current = []
+      reportMarkers.current.forEach((marker) => marker.remove())
+      reportMarkers.current = []
+      pickedMarker.current?.remove()
+      pickedMarker.current = null
       instance.remove()
       map.current = null
       setMapReady(false)
@@ -398,6 +546,12 @@ export default function RiskMap() {
       )
     }
 
+    if (showRoadRisk && mapReady && API && !instance.getSource('road-risk')) {
+      setRoadLayerStatus('loading')
+      addRoadLayer(instance)
+      bringRouteToFront(instance)
+    }
+
     if (instance.getLayer('road-risk-line')) {
       instance.setLayoutProperty(
         'road-risk-line',
@@ -405,7 +559,7 @@ export default function RiskMap() {
         roadVisibility,
       )
     }
-  }, [showAtlas, showRoadRisk])
+  }, [showAtlas, showRoadRisk, mapReady])
 
   // Markers for the chosen start and end.
   useEffect(() => {
@@ -520,6 +674,184 @@ export default function RiskMap() {
       })
   }, [hovered, routes, mapReady])
 
+  // Shelters and hospitals: circle layers (cheap even with hundreds of points)
+  // with a click popup.
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady || !API) return
+    let cancelled = false
+
+    const load = async (
+      key: keyof typeof PLACE_LAYERS,
+      fetcher: () => Promise<MapPlace[]>,
+    ) => {
+      const ids = PLACE_LAYERS[key]
+      try {
+        const items = await fetcher()
+        if (cancelled || !map.current) return
+        const data: FeatureCollection = {
+          type: 'FeatureCollection',
+          features: items.map((place) => ({
+            type: 'Feature' as const,
+            geometry: { type: 'Point' as const, coordinates: [place.lon, place.lat] },
+            properties: {
+              name: place.name,
+              kind: place.kind,
+              near: place.near_locality ?? '',
+            },
+          })),
+        }
+        if (instance.getSource(ids.source)) {
+          ;(instance.getSource(ids.source) as GeoJSONSource).setData(data)
+          return
+        }
+        instance.addSource(ids.source, { type: 'geojson', data })
+        instance.addLayer({
+          id: ids.layer,
+          type: 'circle',
+          source: ids.source,
+          layout: {
+            visibility: placeVisibility.current[key] ? 'visible' : 'none',
+          },
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 4, 13, 8],
+            'circle-color': ids.colour,
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 2,
+          },
+        })
+        instance.on('click', ids.layer, (event) => {
+          const feature = event.features?.[0]
+          if (!feature || feature.geometry.type !== 'Point') return
+          const props = feature.properties as { name: string; kind: string; near: string }
+          new Popup({ offset: 10 })
+            .setLngLat(feature.geometry.coordinates as [number, number])
+            .setDOMContent(
+              popupBody([
+                strongLine(props.name || 'Unnamed'),
+                props.kind,
+                props.near ? `Near ${props.near}` : '',
+                'Source: OpenStreetMap',
+              ].filter((part) => part !== '')),
+            )
+            .addTo(instance)
+        })
+        instance.on('mouseenter', ids.layer, () => {
+          if (!reportModeRef.current) instance.getCanvas().style.cursor = 'pointer'
+        })
+        instance.on('mouseleave', ids.layer, () => {
+          instance.getCanvas().style.cursor = reportModeRef.current ? 'crosshair' : ''
+        })
+        bringRouteToFront(instance)
+      } catch (err) {
+        if (!cancelled) {
+          setPlacesError(err instanceof Error ? err.message : 'Could not load places.')
+        }
+      }
+    }
+
+    void load('shelters', getShelters)
+    void load('hospitals', getHospitals)
+    return () => {
+      cancelled = true
+    }
+  }, [mapReady])
+
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady) return
+    placeVisibility.current = { shelters: showShelters, hospitals: showHospitals }
+    ;(Object.keys(PLACE_LAYERS) as (keyof typeof PLACE_LAYERS)[]).forEach((key) => {
+      const id = PLACE_LAYERS[key].layer
+      if (instance.getLayer(id)) {
+        instance.setLayoutProperty(
+          id,
+          'visibility',
+          placeVisibility.current[key] ? 'visible' : 'none',
+        )
+      }
+    })
+  }, [showShelters, showHospitals, mapReady])
+
+  // Locality list for the search box.
+  useEffect(() => {
+    if (!API) return
+    getLocalities()
+      .then(setLocalities)
+      .catch(() => setLocalities([]))
+  }, [])
+
+  // Community reports: fetched on mount, on demand, and every minute.
+  useEffect(() => {
+    if (!API) return
+    let cancelled = false
+    const load = () =>
+      getReports()
+        .then((items) => {
+          if (cancelled) return
+          setReports(items)
+          setReportsError(null)
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setReportsError(err instanceof Error ? err.message : 'Could not load reports.')
+          }
+        })
+    void load()
+    const timer = window.setInterval(load, 60_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [reportsRefreshKey])
+
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady) return
+
+    reportMarkers.current.forEach((marker) => marker.remove())
+    reportMarkers.current = []
+    if (!showReports) return
+
+    reports.forEach((report) => {
+      const look = REPORT_LOOK[report.kind] ?? REPORT_LOOK.blocked
+      const element = document.createElement('div')
+      element.title = look.label
+      element.textContent = look.glyph
+      element.style.cssText =
+        `display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;` +
+        `background:${look.colour};color:#fff;font-weight:800;font-size:14px;cursor:pointer;` +
+        `border:2px solid ${report.trust === 'verified' ? '#ffffff' : '#ffffffaa'};` +
+        `box-shadow:0 1px 5px rgb(0 0 0 / .45);opacity:${report.trust === 'verified' ? 1 : 0.8}`
+      reportMarkers.current.push(
+        new Marker({ element })
+          .setLngLat([report.lon, report.lat])
+          .setPopup(new Popup({ offset: 18 }).setDOMContent(reportPopup(report)))
+          .addTo(instance),
+      )
+    })
+  }, [reports, showReports, mapReady])
+
+  // "Report a problem" mode: crosshair cursor, next click picks the point.
+  useEffect(() => {
+    reportModeRef.current = reportMode
+    const instance = map.current
+    if (!instance) return
+    instance.getCanvas().style.cursor = reportMode ? 'crosshair' : ''
+  }, [reportMode])
+
+  const searchMatches =
+    searchText.trim().length >= 2
+      ? localities
+          .filter((item) => item.name.toLowerCase().includes(searchText.trim().toLowerCase()))
+          .slice(0, 6)
+      : []
+
+  const flyToLocality = (item: Locality) => {
+    map.current?.flyTo({ center: [item.lon, item.lat], zoom: 13 })
+    setSearchText('')
+  }
+
   const selectEndpoint = useCallback(
     (value: string, set: (endpoint: Endpoint | null) => void) => {
       if (!value || value === 'picked') return
@@ -552,8 +884,58 @@ export default function RiskMap() {
     setLoading(false)
   }, [from, to])
 
+  // Redo the route once a new report has been posted, so it can steer around it.
+  const lastRefreshKey = useRef(reportsRefreshKey)
+  useEffect(() => {
+    if (lastRefreshKey.current === reportsRefreshKey) return
+    lastRefreshKey.current = reportsRefreshKey
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refetching the route is the point of this effect
+    if (from && to) void handleSubmit()
+  }, [reportsRefreshKey, from, to, handleSubmit])
+
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !mapReady || !pickedPoint) return
+    const pin = document.createElement('div')
+    pin.style.cssText =
+      'width:18px;height:18px;border-radius:50%;background:#c92727;border:3px solid #fff;box-shadow:0 1px 5px rgb(0 0 0 / .5)'
+    const marker = new Marker({ element: pin })
+      .setLngLat([pickedPoint.lon, pickedPoint.lat])
+      .addTo(instance)
+    pickedMarker.current = marker
+    return () => {
+      marker.remove()
+      pickedMarker.current = null
+    }
+  }, [pickedPoint, mapReady])
+
   return (
     <div className="risk-map-wrapper">
+      <div className="locality-search">
+        <input
+          type="search"
+          value={searchText}
+          onChange={(event) => setSearchText(event.target.value)}
+          placeholder="Search a place, e.g. Rishikesh"
+          aria-label="Search a locality"
+        />
+        {searchText.trim().length >= 2 && (
+          <ul role="listbox">
+            {searchMatches.length === 0 && <li className="locality-empty">No match</li>}
+            {searchMatches.map((item) => (
+              <li key={item.id}>
+                <button type="button" onClick={() => flyToLocality(item)}>
+                  {item.name}
+                  <small>
+                    {[item.parent, item.district].filter(Boolean).join(', ')}
+                  </small>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <RoutePanel
         from={from}
         to={to}
@@ -578,7 +960,7 @@ export default function RiskMap() {
         onSubmit={handleSubmit}
       />
 
-      <div className="risk-map-stage">
+      <div className="risk-map-stage" ref={stageRef}>
         <div className="risk-map-controls">
           <label>
             <input
@@ -597,9 +979,115 @@ export default function RiskMap() {
             />
             Road risk
           </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={showShelters}
+              onChange={(event) => setShowShelters(event.target.checked)}
+            />
+            <span className="dot dot-shelter" /> Shelters
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={showHospitals}
+              onChange={(event) => setShowHospitals(event.target.checked)}
+            />
+            <span className="dot dot-hospital" /> Hospitals
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={showReports}
+              onChange={(event) => setShowReports(event.target.checked)}
+            />
+            Community reports
+          </label>
+
         </div>
 
+        <div
+          style={{
+            position: 'absolute',
+            top: 12,
+            right: 56,
+            zIndex: 8,
+            display: 'flex',
+            gap: 8,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setReportMode((on) => !on)}
+            aria-pressed={reportMode}
+            style={{
+              padding: '10px 14px',
+              border: 0,
+              borderRadius: 6,
+              background: reportMode ? '#6b7280' : '#c92727',
+              color: '#fff',
+              font: 'inherit',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 2px 10px rgb(0 0 0 / .3)',
+            }}
+          >
+            {reportMode ? 'Cancel' : 'Report a problem'}
+          </button>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-label={isFullscreen ? 'Exit full screen' : 'Full screen map'}
+            style={{
+              padding: '10px 14px',
+              border: '1px solid #dbe3e8',
+              borderRadius: 6,
+              background: '#fff',
+              color: '#1f2937',
+              font: 'inherit',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 2px 10px rgb(0 0 0 / .3)',
+            }}
+          >
+            {isFullscreen ? 'Exit full screen' : 'Full screen'}
+          </button>
+        </div>
+
+        {reportMode && (
+          <p
+            role="status"
+            style={{
+              position: 'absolute',
+              bottom: 12,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 7,
+              margin: 0,
+              padding: '8px 14px',
+              borderRadius: 999,
+              background: '#c92727',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 700,
+              boxShadow: '0 2px 10px rgb(0 0 0 / .3)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Click the map where the problem is
+          </p>
+        )}
+
         <div ref={mapContainer} className="risk-map-canvas" />
+
+        {(placesError || reportsError) && (
+          <p className="risk-layer-status risk-layer-status-error" role="alert" style={{ top: 'auto', bottom: 12 }}>
+            {placesError ?? reportsError}
+          </p>
+        )}
 
         {roadLayerStatus === 'loading' && !layerError && (
           <p className="risk-layer-status" role="status">

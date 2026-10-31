@@ -1,5 +1,6 @@
-
+import { useEffect, useState } from 'react'
 import './App.css'
+import { createReport, sendSos, type ReportKind } from './api'
 import RiskMap from './components/RiskMap'
 import FloodGuidance from './components/FloodGuidance'
 import OfficialWarnings from './components/OfficialWarnings'
@@ -18,7 +19,219 @@ const statusMetrics = [
   'Rainfall — currently driest station',
 ]
 
+const SOS_STORAGE_KEY = 'floodsafe-sos-contact'
+
+function loadSosContact() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SOS_STORAGE_KEY) ?? '{}')
+    return { name: String(saved.name ?? ''), numbers: String(saved.numbers ?? '') }
+  } catch {
+    return { name: '', numbers: '' }
+  }
+}
+
+function getPosition() {
+  return new Promise<GeolocationPosition>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('This browser cannot share your location.'))
+      return
+    }
+    navigator.geolocation.getCurrentPosition(resolve, () =>
+      reject(new Error('Could not get your location. Allow location access and try again.')),
+      { enableHighAccuracy: true, timeout: 15000 },
+    )
+  })
+}
+
+function openSms(numbers: string[], body: string) {
+  window.location.href = `sms:${numbers.join(',')}?body=${encodeURIComponent(body)}`
+}
+
+const MAP_HASH = '#/map'
+
+function MapPage() {
+  const [picked, setPicked] = useState<{ lat: number; lon: number } | null>(null)
+  const [kind, setKind] = useState<ReportKind>('flooded')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [thanks, setThanks] = useState(false)
+
+  const submitReport = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!picked) return
+    setBusy(true)
+    setFormError(null)
+    try {
+      await createReport({ ...picked, kind, note: note.trim() })
+      setPicked(null)
+      setNote('')
+      setKind('flooded')
+      setRefreshKey((key) => key + 1)
+      setThanks(true)
+      window.setTimeout(() => setThanks(false), 5000)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not send the report.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="map-page">
+      <header className="map-page-bar">
+        <a href="#" onClick={(event) => { event.preventDefault(); window.location.hash = '' }}>
+          ← FloodSafe
+        </a>
+        <strong>Flood-aware map tool</strong>
+        <span className="map-tag">Surveyed data</span>
+      </header>
+      <RiskMap
+        onPickReportLocation={(lat, lon) => {
+          setPicked({ lat, lon })
+          setFormError(null)
+        }}
+        pickedPoint={picked}
+        reportsRefreshKey={refreshKey}
+      />
+
+      {picked && (
+        <form className="report-form" onSubmit={submitReport}>
+          <h4>Report a problem</h4>
+          <p className="report-form-where">
+            Location: {picked.lat.toFixed(4)}, {picked.lon.toFixed(4)}
+          </p>
+          <fieldset>
+            <legend>What is the problem?</legend>
+            {(Object.keys(REPORT_KIND_LABELS) as ReportKind[]).map((value) => (
+              <label key={value}>
+                <input
+                  type="radio"
+                  name="report-kind"
+                  checked={kind === value}
+                  onChange={() => setKind(value)}
+                />
+                {REPORT_KIND_LABELS[value]}
+              </label>
+            ))}
+          </fieldset>
+          <label>
+            Cause / details (optional)
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              rows={3}
+              maxLength={300}
+              placeholder="e.g. Water over the road near the bridge"
+            />
+          </label>
+          {formError && <p className="report-form-error" role="alert">{formError}</p>}
+          <div className="report-form-actions">
+            <button type="button" onClick={() => setPicked(null)} disabled={busy}>
+              Cancel
+            </button>
+            <button type="submit" disabled={busy}>
+              {busy ? 'Sending…' : 'Send report'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {thanks && (
+        <p className="report-thanks" role="status">
+          Report sent. Your route is being checked again.
+        </p>
+      )}
+    </div>
+  )
+}
+
+const REPORT_KIND_LABELS: Record<ReportKind, string> = {
+  flooded: 'Flooded road',
+  blocked: 'Road blocked',
+  landslide: 'Landslide',
+}
+
 function App() {
+  const [onMapPage, setOnMapPage] = useState(() => window.location.hash === MAP_HASH)
+
+  useEffect(() => {
+    const sync = () => setOnMapPage(window.location.hash === MAP_HASH)
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
+
+  useEffect(() => {
+    document.title = onMapPage ? 'FloodSafe — Map tool' : 'FloodSafe'
+  }, [onMapPage])
+
+  return onMapPage ? <MapPage /> : <Portal />
+}
+
+function Portal() {
+  const [sosOpen, setSosOpen] = useState(false)
+  const [sosName, setSosName] = useState(() => loadSosContact().name)
+  const [sosNumbers, setSosNumbers] = useState(() => loadSosContact().numbers)
+  const [sosBusy, setSosBusy] = useState(false)
+  const [sosMessage, setSosMessage] = useState<string | null>(null)
+
+  const handleSos = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const numbers = sosNumbers
+      .split(/[,\n]/)
+      .map((value) => value.trim().replace(/[\s-]/g, ''))
+      .filter(Boolean)
+    const name = sosName.trim()
+
+    if (!name || numbers.length === 0) {
+      setSosMessage('Enter your name and at least one phone number with country code, e.g. +91…')
+      return
+    }
+    if (numbers.some((value) => !/^\+\d{8,15}$/.test(value))) {
+      setSosMessage('Phone numbers need the country code, for example +919876543210.')
+      return
+    }
+
+    try {
+      localStorage.setItem(SOS_STORAGE_KEY, JSON.stringify({ name, numbers: sosNumbers }))
+    } catch {
+      // Remembering the contact is optional.
+    }
+
+    setSosBusy(true)
+    setSosMessage(null)
+
+    let position: GeolocationPosition
+    try {
+      position = await getPosition()
+    } catch (err) {
+      setSosMessage(err instanceof Error ? err.message : 'Could not get your location.')
+      setSosBusy(false)
+      return
+    }
+
+    const lat = Number(position.coords.latitude.toFixed(5))
+    const lon = Number(position.coords.longitude.toFixed(5))
+
+    try {
+      const result = await sendSos({ name, lat, lon, numbers })
+      if (result.status === 'sent') {
+        setSosMessage('SOS sent. Your contacts have been texted your location.')
+      } else {
+        setSosMessage('Opening your SMS app with the message ready to send.')
+        openSms(numbers, result.sms_body)
+      }
+    } catch {
+      // The API is unreachable: still let the phone send the text itself.
+      const link = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`
+      setSosMessage('Could not reach FloodSafe. Opening your SMS app instead.')
+      openSms(numbers, `SOS from ${name} via FloodSafe. I need help. My location: ${link}`)
+    } finally {
+      setSosBusy(false)
+    }
+  }
+
   return (
     <main className="dashboard">
       <div className="utility-bar">
@@ -49,7 +262,7 @@ function App() {
           <a href="#ffgs">FFGS</a>
           <a href="#services">Services</a>
           <a href="#hazard-reports">Hazard Reports</a>
-          <a className="nav-cta" href="#map-tool">Open Map Tool</a>
+          <a className="nav-cta" href={MAP_HASH} target="_blank" rel="noopener">Open Map Tool</a>
         </nav>
       </header>
 
@@ -68,13 +281,43 @@ function App() {
               data, and citizen-reported hazards — instead of distance alone.
             </p>
             <div className="hero-actions">
-              <a className="primary-button" href="#map-tool">Open the Map Tool →</a>
+              <a className="primary-button" href={MAP_HASH} target="_blank" rel="noopener">Open the Map Tool →</a>
               <a className="secondary-button" href="#live-status">View System Status</a>
             </div>
-            <button className="sos-button" type="button">
+            <button
+              className="sos-button"
+              type="button"
+              aria-expanded={sosOpen}
+              onClick={() => setSosOpen((open) => !open)}
+            >
               <span className="sos-circle">SOS</span>
               <strong>In danger? Text your family your location</strong>
             </button>
+            {sosOpen && (
+              <form className="sos-form" onSubmit={handleSos}>
+                <label>
+                  Your name
+                  <input
+                    value={sosName}
+                    onChange={(event) => setSosName(event.target.value)}
+                    autoComplete="name"
+                  />
+                </label>
+                <label>
+                  Phone numbers to text (comma separated, with country code)
+                  <input
+                    value={sosNumbers}
+                    onChange={(event) => setSosNumbers(event.target.value)}
+                    inputMode="tel"
+                    placeholder="+919876543210, +911234567890"
+                  />
+                </label>
+                <button type="submit" disabled={sosBusy}>
+                  {sosBusy ? 'Getting your location…' : 'Send my location now'}
+                </button>
+                {sosMessage && <p role="status">{sosMessage}</p>}
+              </form>
+            )}
           </div>
 
           <div className="route-illustration">
@@ -126,7 +369,13 @@ function App() {
             </div>
             <span className="map-tag">Surveyed data</span>
           </div>
-          <RiskMap />
+          <p>
+            Route planning, hazard layers, shelters, hospitals and community
+            reports open in a full-screen map in a new tab.
+          </p>
+          <a className="primary-button" href={MAP_HASH} target="_blank" rel="noopener">
+            Open the full-screen map →
+          </a>
         </section>
 
         <section id="ffgs" className="portal-section">

@@ -131,3 +131,130 @@ export async function getRouteComparison(
 
   return comparison
 }
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!API) {
+    throw new Error(
+      'VITE_API_URL is not set, so the app does not know where the FloodSafe API is.',
+    )
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`${API}${path}`, init)
+  } catch {
+    throw new Error(`Could not reach the FloodSafe API at ${API}.`)
+  }
+
+  if (!response.ok) {
+    let detail = `Request failed with status ${response.status}`
+    try {
+      const body: ApiError = await response.json()
+      if (body?.detail) detail = body.detail
+    } catch {
+      // Not the documented error shape; keep the status text.
+    }
+    throw new Error(detail)
+  }
+
+  return (await response.json()) as T
+}
+
+// ---- Shelters, hospitals, localities -----------------------------------
+
+export interface MapPlace {
+  id: string
+  name: string
+  /** OpenStreetMap type, e.g. shelter, hospital, clinic. */
+  kind: string
+  lat: number
+  lon: number
+  near_locality: string | null
+  source: string
+}
+
+export interface Locality {
+  id: string
+  name: string
+  parent: string | null
+  district: string
+  lat: number
+  lon: number
+}
+
+export const getShelters = () =>
+  request<{ items: MapPlace[] }>('/shelters').then((body) => body.items)
+
+export const getHospitals = () =>
+  request<{ items: MapPlace[] }>('/hospitals').then((body) => body.items)
+
+export const getLocalities = () =>
+  request<{ items: Locality[] }>('/localities').then((body) => body.items)
+
+// ---- Community reports --------------------------------------------------
+
+export type ReportKind = 'flooded' | 'blocked' | 'landslide'
+
+export interface Report {
+  id: string
+  lat: number
+  lon: number
+  kind: ReportKind
+  note: string
+  created_at: string
+  trust: 'verified' | 'unverified'
+  trust_reason: string
+  confirmations: number
+  near_locality: string
+}
+
+export const getReports = () =>
+  request<{ items: Report[] }>('/reports').then((body) => body.items)
+
+// ---- SOS ----------------------------------------------------------------
+
+export interface SosRequest {
+  name: string
+  lat: number
+  lon: number
+  numbers: string[]
+}
+
+export interface SosResponse {
+  status: 'sent' | 'fallback'
+  sms_body: string
+  link: string
+}
+
+export const sendSos = (body: SosRequest) =>
+  request<SosResponse>('/sos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+export function getReporterId() {
+  const key = 'floodsafe-reporter-id'
+  try {
+    let id = localStorage.getItem(key)
+    if (!id) {
+      id = `anon-${crypto.randomUUID().slice(0, 8)}`
+      localStorage.setItem(key, id)
+    }
+    return id
+  } catch {
+    return 'anon-unknown'
+  }
+}
+
+export const createReport = (body: {
+  lat: number
+  lon: number
+  kind: ReportKind
+  note: string
+}) =>
+  request<Report>('/reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, reporter_id: getReporterId() }),
+  })
