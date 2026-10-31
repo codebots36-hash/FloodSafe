@@ -11,3 +11,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
+  - type: web
+    name: floodsafe-web
+    runtime: static
+    branch: shourya
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://floodsafe-api-4nzc.onrender.com
