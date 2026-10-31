@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from app.graph import get_graph
 from app.routing import MAX_DETOUR, RoutingError, km_by_class, route, safest_weights, segments
-from app.weather import WeatherUnavailable, readings
+from app.weather import WeatherUnavailable, parse_day, readings, replayed
 from app.zones import current as current_zones
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -90,9 +90,7 @@ def get_route(
     depart: str | None = Query(None, description="ISO 8601; defaults to now"),
     replay: str | None = Query(None, description="YYYY-MM-DD; not implemented yet"),
 ):
-    if replay:
-        raise RoutingError("not_ready", "Replay mode is not implemented yet.", 501)
-
+    day = replay_day(replay)
     graph = get_graph()
     if mode == "safest" and not graph.has_risk:
         raise RoutingError("not_ready", "Safest routing needs the road risk scores.", 501)
@@ -110,6 +108,11 @@ def get_route(
 
     km, unscored_km = km_by_class(graph, result["edge_ids"])
     segs = segments(graph, result["edge_ids"], result["bounds"])
+    if day:
+        # Road risk comes from the terrain and the hazard atlas, neither of
+        # which changes with the date, so replaying one does not move a route.
+        notes.append(f"Replaying {day.isoformat()}. A road's risk class comes from its terrain "
+                     "and the hazard atlas, so it is the same on any date.")
     if not graph.has_risk:
         notes.append(RISK_NOT_READY)
     elif unscored_km:
@@ -122,7 +125,7 @@ def get_route(
     return {
         "mode": mode,
         "depart": depart or datetime.now(IST).isoformat(timespec="seconds"),
-        "replay": None,
+        "replay": day.isoformat() if day else None,
         "distance_km": round(result["distance_m"] / 1000, 1),
         "duration_min": round(result["duration_s"] / 60),
         "geometry": {"type": "LineString", "coordinates": result["coordinates"]},
@@ -155,26 +158,33 @@ def places_file(name):
                         headers={"Cache-Control": "public, max-age=3600"})
 
 
+def replay_day(replay):
+    """A replay date, or None for live data."""
+    if not replay:
+        return None
+    try:
+        return parse_day(replay)
+    except RuntimeError as exc:
+        raise RoutingError("bad_replay", str(exc))
+
+
 @app.get("/weather")
 def get_weather(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
-    replay: str | None = Query(None, description="YYYY-MM-DD; not implemented yet"),
+    replay: str | None = Query(None, description="YYYY-MM-DD; the rain that fell that day"),
 ):
-    if replay:
-        raise RoutingError("not_ready", "Replay mode is not implemented yet.", 501)
+    day = replay_day(replay)
     try:
-        return readings([(lat, lon)])[0]
+        return (replayed([(lat, lon)], day) if day else readings([(lat, lon)]))[0]
     except WeatherUnavailable as exc:
         raise RoutingError("weather_unavailable", str(exc), 503)
 
 
 @app.get("/zones")
-def get_zones(replay: str | None = Query(None, description="YYYY-MM-DD; not implemented yet")):
-    if replay:
-        raise RoutingError("not_ready", "Replay mode is not implemented yet.", 501)
+def get_zones(replay: str | None = Query(None, description="YYYY-MM-DD; the rain that fell that day")):
     try:
-        return current_zones()
+        return current_zones(replay_day(replay))
     except WeatherUnavailable as exc:
         raise RoutingError("weather_unavailable", str(exc), 503)
 

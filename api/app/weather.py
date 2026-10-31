@@ -19,7 +19,7 @@ Source: Open-Meteo forecast API (https://open-meteo.com), CC-BY 4.0.
 import json
 import os
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
@@ -34,8 +34,15 @@ TRAILING_HOURS = 72
 TIMEOUT_S = 20
 MAX_POINTS = 100        # per request, well inside what Open-Meteo accepts
 
-RELAY_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                          "data", "weather_relay.json")
+DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+RELAY_FILE = os.path.join(DATA, "weather_relay.json")
+
+# Replay reads the ERA5 archive, which is the same record the thresholds were
+# calibrated on, so a replayed day is judged by the rain that actually fell.
+ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
+HISTORY_DIR = os.path.join(DATA, "weather_history")
+ARCHIVE_FROM = date(1940, 1, 1)
+LEAD_DAYS = 3  # fetched before the date, to fill the 24 h window and the 48 h before it
 
 _lock = threading.Lock()
 _relay = None  # {"lat,lon": {"hour": "2026-10-31T14", "payload": {...}}}
@@ -99,19 +106,30 @@ def _request(keys):
 
 
 def series(payload):
-    """(times, values, now_index) from a payload; times are aware IST datetimes.
-
-    The series runs from PAST_DAYS ago to FORECAST_DAYS ahead, so "now" is
-    found in it rather than assumed to be the last entry.
-    """
+    """(times, values) from a payload; times are aware IST datetimes."""
     hourly = payload.get("hourly") or {}
     stamps, values = hourly.get("time") or [], hourly.get("precipitation") or []
     if not stamps:
         raise WeatherUnavailable("Open-Meteo returned no hourly rainfall.")
-    times = [datetime.fromisoformat(s).replace(tzinfo=IST) for s in stamps]
+    return [datetime.fromisoformat(s).replace(tzinfo=IST) for s in stamps], values
+
+
+def index_now(times):
+    """Where "now" sits in the series, which runs from the past into the forecast."""
     now = datetime.now(IST)
-    now_index = max((i for i, t in enumerate(times) if t <= now), default=0)
-    return times, values, now_index
+    return max((i for i, t in enumerate(times) if t <= now), default=0)
+
+
+def index_peak(times, values, day):
+    """The hour of `day` when trailing 24 h rain was heaviest.
+
+    Replaying a date has to pick a moment in it, and the peak is the one worth
+    seeing: it is when the day's warning would have been loudest.
+    """
+    hours = [i for i, t in enumerate(times) if t.date() == day]
+    if not hours:
+        raise WeatherUnavailable(f"No rainfall was returned for {day.isoformat()}.")
+    return max(hours, key=lambda i: total(values, i, TRAILING_HOURS // 3) or 0)
 
 
 def total(values, end, hours):
@@ -120,15 +138,22 @@ def total(values, end, hours):
     return round(sum(chunk), 1) if chunk else None
 
 
-def _reading(payload, source):
-    times, values, i = series(payload)
+def reading(payload, source, index=None):
+    """One reading in the shape of contracts/weather.json.
+
+    `index` is which hour of the series to read as "now"; the default is the
+    real one. On a replay the 24 hours that follow are what actually fell,
+    not a forecast, which is what "source": "replay" is there to say.
+    """
+    times, values = series(payload)
+    i = index_now(times) if index is None else index
     current = payload.get("current") or {}
-    as_of = current.get("time")
+    live_now = index is None and current.get("time")
     return {
-        "as_of": (datetime.fromisoformat(as_of).replace(tzinfo=IST) if as_of
+        "as_of": (datetime.fromisoformat(current["time"]).replace(tzinfo=IST) if live_now
                   else times[i]).isoformat(timespec="seconds"),
         "source": source,
-        "current_mm_h": current.get("precipitation"),
+        "current_mm_h": current.get("precipitation") if live_now else total(values, i, 1),
         "last_72h_mm": total(values, i, TRAILING_HOURS),
         "hourly": [{"time": t.isoformat(timespec="seconds"),
                     "mm": None if v is None else round(v, 1)}
@@ -171,12 +196,94 @@ def payloads(points):
 
 def readings(points):
     """One reading per point, in the shape of contracts/weather.json."""
-    found = payloads(points)
-    out = []
+    return [reading(*found) for found in _each(payloads(points), points)]
+
+
+def _each(found, points):
     for lat, lon in points:
         entry = found.get(key(lat, lon))
         if entry is None:
             raise WeatherUnavailable(
                 "Rainfall for that point could not be fetched, and none was stored earlier.")
-        out.append(_reading(*entry))
+        yield entry
+
+
+# ---------------------------------------------------------------------------
+# Replay: the rain that actually fell on a past date
+# ---------------------------------------------------------------------------
+
+def parse_day(text):
+    """A replay date, or a RuntimeError saying why it cannot be replayed."""
+    try:
+        day = datetime.strptime(text, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        raise RuntimeError("A replay date must look like YYYY-MM-DD.")
+    today = datetime.now(IST).date()
+    if day >= today:
+        raise RuntimeError(f"{text} is not in the past, so there is no record of it yet.")
+    if day < ARCHIVE_FROM:
+        raise RuntimeError(f"The rainfall record starts in {ARCHIVE_FROM.year}.")
+    return day
+
+
+def _history_file(day):
+    return os.path.join(HISTORY_DIR, f"{day.isoformat()}.json")
+
+
+def history(points, day):
+    """{key: payload} of observed rain for `day`, with the days before it.
+
+    A past date never changes, so each date is fetched once and kept. Keeping
+    them also means a demo works without a network.
+    """
+    keys = list(dict.fromkeys(key(lat, lon) for lat, lon in points))
+    try:
+        with open(_history_file(day), encoding="utf-8") as fh:
+            stored = json.load(fh)
+    except (OSError, ValueError):
+        stored = {}
+
+    missing = [k for k in keys if k not in stored]
+    for chunk in [missing[i:i + MAX_POINTS] for i in range(0, len(missing), MAX_POINTS)]:
+        pairs = [k.split(",") for k in chunk]
+        params = {
+            "latitude": ",".join(lat for lat, _ in pairs),
+            "longitude": ",".join(lon for _, lon in pairs),
+            "hourly": "precipitation",
+            "start_date": (day - timedelta(days=LEAD_DAYS)).isoformat(),
+            # The day after as well, so "the next 24 hours" exist for a date
+            # whose worst hour falls late in the evening.
+            "end_date": min(day + timedelta(days=1),
+                            datetime.now(IST).date() - timedelta(days=1)).isoformat(),
+            "timezone": "Asia/Kolkata",
+            "models": "era5",
+        }
+        response = requests.get(ARCHIVE, params=params, timeout=TIMEOUT_S)
+        if response.status_code != 200:
+            reason = response.text[:200]
+            try:
+                reason = response.json().get("reason", reason)
+            except ValueError:
+                pass
+            raise WeatherUnavailable(f"The rainfall record for {day} could not be read: {reason}")
+        payload = response.json()
+        for k, one in zip(chunk, payload if isinstance(payload, list) else [payload]):
+            stored[k] = one
+
+    if missing:
+        os.makedirs(HISTORY_DIR, exist_ok=True)
+        tmp = _history_file(day) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(stored, fh, separators=(",", ":"))
+        os.replace(tmp, _history_file(day))
+    return {k: stored[k] for k in keys}
+
+
+def replayed(points, day):
+    """One reading per point, as it stood at the worst hour of `day`."""
+    found = {k: (payload, "replay") for k, payload in history(points, day).items()}
+    out = []
+    for payload, source in _each(found, points):
+        times, values = series(payload)
+        out.append(reading(payload, source, index_peak(times, values, day)))
     return out

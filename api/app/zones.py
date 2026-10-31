@@ -19,7 +19,7 @@ api/data/thresholds.json and is never hidden behind the status.
 import json
 import os
 
-from app.weather import WeatherUnavailable, IST, key, payloads, series, total
+from app.weather import WeatherUnavailable, history, index_now, key, payloads, series, total
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 WINDOWS = {"h1": 1, "h3": 3, "h24": 24}
@@ -56,37 +56,63 @@ def status_of(rain, limits):
     return "SAFE"
 
 
-def _rain(payload):
-    """Trailing rain at this hour, in the shape the contract's rain_mm wants."""
-    _, values, now = series(payload)
-    return {**{w: total(values, now, hours) for w, hours in WINDOWS.items()},
-            "antecedent_48h": (total(values, now - WINDOWS["h24"], ANTECEDENT_H)
-                               if now >= WINDOWS["h24"] else None)}
+def _rain(values, at):
+    """Trailing rain at one hour, in the shape the contract's rain_mm wants."""
+    return {**{w: total(values, at, hours) for w, hours in WINDOWS.items()},
+            "antecedent_48h": (total(values, at - WINDOWS["h24"], ANTECEDENT_H)
+                               if at >= WINDOWS["h24"] else None)}
+
+
+def _worst_hour(found, day):
+    """The hour of `day` when rain was heaviest anywhere in the state.
+
+    Every zone is then read at that same moment, so one replayed list is one
+    snapshot rather than each zone's own worst hour stitched together.
+    """
+    best, at = -1.0, None
+    for payload, _ in found.values():
+        times, values = series(payload)
+        for i, time in enumerate(times):
+            if time.date() != day:
+                continue
+            depth = total(values, i, WINDOWS["h24"]) or 0
+            if depth > best:
+                best, at = depth, i
+    if at is None:
+        raise WeatherUnavailable(f"No rainfall was recorded for {day.isoformat()}.")
+    return at
 
 
 def current(replay=None):
     zones = _load("zones")["zones"]
     thresholds = _load("thresholds")
+    points = [(z["lat"], z["lon"]) for z in zones]
 
-    found = payloads([(z["lat"], z["lon"]) for z in zones])
+    if replay:
+        found = {cell: (payload, "replay")
+                 for cell, payload in history(points, replay).items()}
+    else:
+        found = payloads(points)
     missing = {z["id"] for z in zones if key(z["lat"], z["lon"]) not in found}
     if missing:
         raise WeatherUnavailable(
-            f"Rainfall could not be fetched for {len(missing)} of {len(zones)} zones, "
-            "and none was stored earlier.")
+            f"Rainfall could not be read for {len(missing)} of {len(zones)} zones.")
 
-    # Zones in the same grid cell share a reading, so each one is read once.
-    rain_by_cell = {cell: _rain(payload) for cell, (payload, _) in found.items()}
-    as_of, sources = None, set()
-    out = []
+    at = _worst_hour(found, replay) if replay else None
+    # Zones in the same grid cell share a reading, so each cell is read once.
+    rain_by_cell, time_by_cell = {}, {}
+    for cell, (payload, _) in found.items():
+        times, values = series(payload)
+        hour = index_now(times) if at is None else min(at, len(times) - 1)
+        rain_by_cell[cell] = _rain(values, hour)
+        time_by_cell[cell] = times[hour]
+
+    sources, out = set(), []
     for zone in zones:
         cell = key(zone["lat"], zone["lon"])
-        payload, source = found[cell]
-        sources.add(source)
+        sources.add(found[cell][1])
         limits = thresholds_for(zone, thresholds)
         rain = rain_by_cell[cell]
-        times, _, now = series(payload)
-        as_of = min(as_of or times[now], times[now])
         out.append({**{k: zone[k] for k in ("id", "name", "parent", "district", "lat", "lon",
                                             "hazard_class", "risk_source")},
                     "status": status_of(rain, limits),
@@ -97,10 +123,10 @@ def current(replay=None):
                     "catchment_km2": zone["catchment_km2"]})
 
     return {
-        "as_of": as_of.isoformat(timespec="seconds"),
+        "as_of": min(time_by_cell.values()).isoformat(timespec="seconds"),
         # One stale cell makes the whole list stale, and says so.
-        "source": "live" if sources == {"live"} else "relay",
-        "replay": replay,
+        "source": "replay" if replay else ("live" if sources == {"live"} else "relay"),
+        "replay": replay.isoformat() if replay else None,
         "threshold_basis": BASIS,
         "zones": out,
     }

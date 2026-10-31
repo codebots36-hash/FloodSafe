@@ -95,7 +95,26 @@ def test_the_thresholds_were_calibrated_not_guessed():
     assert all(auc > 0.5 for auc in thresholds["roc_auc"].values())
 
 
-def test_replay_is_not_ready_yet():
-    response = client.get("/zones", params={"replay": "2013-06-16"})
-    assert response.status_code == 501
-    assert response.json()["error"] == "not_ready"
+def test_replaying_the_2013_flood_turns_the_state_critical():
+    response = client.get("/zones", params={"replay": "2013-06-17"})
+    if response.status_code == 503:
+        pytest.skip(f"the rainfall archive could not be read: {response.json()['detail']}")
+    live = response.json()
+
+    assert live["source"] == "replay"
+    assert live["replay"] == "2013-06-17"
+    assert live["as_of"].startswith("2013-06-17")
+
+    warned = [z for z in live["zones"] if z["status"] != "SAFE"]
+    assert len(warned) > len(live["zones"]) / 2  # it was a statewide event
+    kedarnath = next(z for z in live["zones"] if z["id"] == "kedarnath")
+    assert kedarnath["status"] == "CRITICAL"
+    assert kedarnath["rain_mm"]["h24"] > kedarnath["critical"]["h24"]
+
+
+def test_a_replayed_list_is_one_moment_not_each_zones_worst():
+    response = client.get("/zones", params={"replay": "2013-06-17"})
+    if response.status_code == 503:
+        pytest.skip("the rainfall archive could not be read")
+    # Every zone is read at the same hour, so the one as_of describes them all.
+    assert response.json()["as_of"].endswith("+05:30")

@@ -68,11 +68,33 @@ def test_nearby_points_share_one_reading():
     assert weather.key(30.0869, 78.2676) != weather.key(30.3165, 78.0322)
 
 
-def test_replay_is_not_ready_yet():
-    response = client.get("/weather", params={**RISHIKESH, "replay": "2013-06-16"})
-    assert response.status_code == 501
-    assert response.json()["error"] == "not_ready"
-
-
 def test_a_point_outside_the_world_is_refused():
     assert client.get("/weather", params={"lat": 120, "lon": 78}).status_code == 422
+
+
+# Replay reads the ERA5 archive. The two dates below are the Uttarakhand
+# floods of June 2013, kept in api/data/weather_history so this runs offline.
+KEDARNATH = {"lat": 30.7352, "lon": 79.0669}
+
+
+def test_replaying_the_2013_flood_returns_the_rain_that_fell():
+    response = client.get("/weather", params={**KEDARNATH, "replay": "2013-06-17"})
+    if response.status_code == 503:
+        pytest.skip(f"the rainfall archive could not be read: {response.json()['detail']}")
+    body = response.json()
+
+    assert body["source"] == "replay"
+    as_of = datetime.datetime.fromisoformat(body["as_of"])
+    assert as_of.date() == datetime.date(2013, 6, 17)
+    assert len(body["hourly"]) == weather.FORECAST_HOURS
+    assert datetime.datetime.fromisoformat(body["hourly"][0]["time"]) > as_of
+    # The disaster itself: well over 100 mm in the three days to the 17th.
+    assert body["last_72h_mm"] > 100, body["last_72h_mm"]
+
+
+def test_a_replay_date_that_cannot_work_says_why():
+    for bad in ("tomorrow", "2099-01-01", "1850-01-01"):
+        response = client.get("/weather", params={**RISHIKESH, "replay": bad})
+        assert response.status_code == 400, bad
+        assert response.json()["error"] == "bad_replay"
+        assert response.json()["detail"]

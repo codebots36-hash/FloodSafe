@@ -7,7 +7,7 @@ Conventions:
 - Coordinates in GeoJSON are `[lon, lat]`. Everywhere else they are separate `lat` and `lon` numbers.
 - Times are ISO 8601 with the India offset, for example `2026-10-31T14:00:00+05:30`.
 - Risk classes are `LOW`, `MODERATE`, `SIGNIFICANT` or `EXTREME`. `risk_source` is `surveyed` (from the published hazard atlas) or `modelled` (from our statewide model).
-- `replay` is `null` for live data, or the past date (`YYYY-MM-DD`) being replayed.
+- `replay` is `null` for live data, or the past date (`YYYY-MM-DD`) being replayed. A replayed date is read at the hour that day when rain was heaviest, and `source` is then `replay`. On `/weather` the `hourly` list is then the rain that actually fell next, not a forecast. A road's risk class comes from its terrain and the hazard atlas, so `/route` returns the same route on any date and says so in `notes`.
 - Optional fields may be added later. No field is ever renamed or removed.
 
 ## GET /health → [health.json](health.json)
