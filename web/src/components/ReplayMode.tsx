@@ -1,52 +1,78 @@
 import { useState } from 'react'
-import PreviewBadge from './PreviewBadge'
+import { setSetting, useSettings, useT } from '../settings'
 
-// Steps only show how the timeline will move; no replay data is connected,
-// so no rainfall or risk values are invented for them.
-const REPLAY_STEPS = 4
+// Past floods whose rain is kept in the API (api/data/weather_history), so
+// they replay even without a network. Any other past date is fetched once.
+const EVENTS = [
+  { date: '2025-08-05', label: 'Dharali (Uttarkashi) flash flood, 5 Aug 2025' },
+  { date: '2013-06-16', label: 'Kedarnath disaster, 16 Jun 2013' },
+  { date: '2013-06-17', label: 'Kedarnath disaster, 17 Jun 2013' },
+]
 
+const yesterday = () => new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+
+/**
+ * One switch for the whole app: routing, zones, guidance and rain then run on
+ * the rain that actually fell that day, and every screen says "Replay of".
+ */
 export default function ReplayMode() {
-  const [index, setIndex] = useState(0)
+  const t = useT()
+  const { replay } = useSettings()
+  const [date, setDate] = useState(replay ?? EVENTS[0].date)
 
   return (
     <section className="replay-card">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">HISTORICAL REVIEW</p>
-          <h3>Replay mode</h3>
-          <p>Explore how conditions changed over time.</p>
+          <p className="eyebrow">{t('HISTORICAL REVIEW')}</p>
+          <h3>{t('Replay mode')}</h3>
+          <p>{t('Run routing, zones and guidance on the rain that actually fell on a past day.')}</p>
         </div>
-        <PreviewBadge />
       </div>
 
-      <label className="replay-timeline">
-        <span>
-          Timeline: step {index + 1} of {REPLAY_STEPS}
-        </span>
+      <div className="replay-events">
+        {EVENTS.map((event) => (
+          <button
+            key={event.date}
+            type="button"
+            className={date === event.date ? 'is-selected' : ''}
+            onClick={() => setDate(event.date)}
+          >
+            {event.label}
+          </button>
+        ))}
+      </div>
+
+      <label className="replay-date">
+        {t('Replay date')}{' '}
         <input
-          type="range"
-          min={0}
-          max={REPLAY_STEPS - 1}
-          step={1}
-          value={index}
-          onChange={(event) => setIndex(Number(event.target.value))}
+          type="date"
+          min="1940-01-01"
+          max={yesterday()}
+          value={date}
+          onChange={(event) => setDate(event.target.value)}
         />
       </label>
 
-      <div className="replay-summary">
-        <div>
-          <span>Rainfall</span>
-          <strong className="preview-value">Not connected</strong>
-        </div>
-        <div>
-          <span>Risk level</span>
-          <strong className="preview-value">Not connected</strong>
-        </div>
+      <div className="replay-actions">
+        <button
+          type="button"
+          className="primary-button"
+          disabled={!date}
+          onClick={() => setSetting('replay', date)}
+        >
+          {t('Start replay')}
+        </button>
+        {replay && (
+          <button type="button" className="secondary-button" onClick={() => setSetting('replay', null)}>
+            {t('Back to live')}
+          </button>
+        )}
       </div>
 
       <p className="data-note">
-        Layout preview — no historical rainfall is connected, so no readings are
-        shown.
+        {replay ? `${t('Replay of')} ${replay}. ` : ''}
+        Rain from the ERA5 record (Open-Meteo archive): what fell, hour by hour, not a forecast.
       </p>
     </section>
   )

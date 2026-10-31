@@ -2,5 +2,6 @@
   "name": "Asha",
   "lat": 30.0869,
   "lon": 78.2676,
-  "numbers": ["+910000000000"]
+  "numbers": ["+910000000000"],
+  "share_with_responders": false
 }

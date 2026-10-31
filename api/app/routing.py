@@ -29,6 +29,7 @@ PENALTIES = {
              "unscored": 2, "landslide": 2},
 }
 MAX_DETOUR = 3  # strict Safest longer than this x Fastest -> use "mild"
+RAIN_FACTOR = np.array([1.0, 2.0, 4.0])  # SAFE / WATCH / CRITICAL, see rain_factor
 
 
 class RoutingError(Exception):
@@ -99,17 +100,32 @@ def route(graph, start, end, weights=None):
         "distance_m": distance_m,
         "duration_s": duration_s,
         "snapped_m": {"start": source_m, "end": target_m},
+        # Cost from the start to every node; for Fastest, the earliest arrival in seconds.
+        "costs": costs,
     }
 
 
-def safest_weights(graph, level):
-    """Per-directed-edge Safest cost for a PENALTIES level."""
+def safest_weights(graph, level, extra=None):
+    """Per-directed-edge Safest cost for a PENALTIES level, times an optional
+    per-edge multiplier (forecast rain, community reports)."""
     p = PENALTIES[level]
     lut = np.full(256, p["unscored"], dtype=np.float64)
     for code, name in enumerate(RISK_CLASSES):
         lut[code] = p[name]
     slide = np.where(np.asarray(graph.edge_landslide), p["landslide"], 1.0)
-    return graph.travel_s * lut[np.asarray(graph.edge_risk)] * slide
+    weights = graph.travel_s * lut[np.asarray(graph.edge_risk)] * slide
+    return weights if extra is None else weights * extra
+
+
+def rain_factor(graph, level):
+    """Safest multiplier for rain: a road already rated MODERATE or worse, or
+    landslide-prone, costs RAIN_FACTOR[level] times more when the zone it is
+    in is WATCH (1) or CRITICAL (2) at the hour you reach it. LOW roads are
+    left alone: rain on a road nothing marks as risky is not a reason to leave it.
+    A modelling choice, not an official rule."""
+    risky = ((np.asarray(graph.edge_risk) >= 1) & (np.asarray(graph.edge_risk) < len(RISK_CLASSES))) \
+        | np.asarray(graph.edge_landslide)
+    return np.where(risky, RAIN_FACTOR[np.asarray(level)], 1.0)
 
 
 def edge_risk(graph, edge_id):
@@ -122,15 +138,21 @@ def edge_risk(graph, edge_id):
     return RISK_CLASSES[code], source, bool(graph.edge_landslide[edge_id])
 
 
-def segments(graph, edge_ids, bounds):
+def segments(graph, edge_ids, bounds, rain_mm=None):
     """Consecutive edges with the same class, source and landslide flag
-    merge into one segment; start/end index the route's coordinates."""
+    merge into one segment; start/end index the route's coordinates.
+
+    rain_mm is the forecast rain per edge for the hour you reach it (NaN where
+    unknown); a segment keeps the wettest of its edges."""
     out = []
     for k, edge_id in enumerate(edge_ids):
         risk_class, source, slide = edge_risk(graph, edge_id)
+        mm = None if rain_mm is None or np.isnan(rain_mm[k]) else round(float(rain_mm[k]), 1)
         if out and (out[-1]["risk_class"], out[-1]["risk_source"],
                     out[-1]["landslide_prone"]) == (risk_class, source, slide):
             out[-1]["end"] = bounds[k + 1]
+            if mm is not None and (out[-1]["forecast_rain_mm"] or 0) <= mm:
+                out[-1]["forecast_rain_mm"] = mm
             continue
         out.append({
             "start": bounds[k],
@@ -138,7 +160,7 @@ def segments(graph, edge_ids, bounds):
             "risk_class": risk_class,
             "risk_source": source,
             "landslide_prone": slide,
-            "forecast_rain_mm": None,
+            "forecast_rain_mm": mm,
             "report_id": None,
         })
     return out

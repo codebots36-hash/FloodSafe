@@ -7,7 +7,7 @@ Conventions:
 - Coordinates in GeoJSON are `[lon, lat]`. Everywhere else they are separate `lat` and `lon` numbers.
 - Times are ISO 8601 with the India offset, for example `2026-10-31T14:00:00+05:30`.
 - Risk classes are `LOW`, `MODERATE`, `SIGNIFICANT` or `EXTREME`. `risk_source` is `surveyed` (from the published hazard atlas) or `modelled` (from our statewide model).
-- `replay` is `null` for live data, or the past date (`YYYY-MM-DD`) being replayed. A replayed date is read at the hour that day when rain was heaviest, and `source` is then `replay`. On `/weather` the `hourly` list is then the rain that actually fell next, not a forecast. A road's risk class comes from its terrain and the hazard atlas, so `/route` returns the same route on any date and says so in `notes`.
+- `replay` is `null` for live data, or the past date (`YYYY-MM-DD`) being replayed. A replayed date is read at the hour that day when rain was heaviest, and `source` is then `replay`. On `/weather` the `hourly` list is then the rain that actually fell next, not a forecast. A road's risk class comes from its terrain and the hazard atlas and is the same on any date, but on `/route` the rain is that day's, so a replayed Safest route can differ from today's.
 - Optional fields may be added later. No field is ever renamed or removed.
 
 ## GET /health → [health.json](health.json)
@@ -16,10 +16,11 @@ Conventions:
 
 ## GET /route?from=lat,lon&to=lat,lon&mode=fastest|safest&depart=ISO&replay=YYYY-MM-DD → [route.json](route.json)
 
-`depart` and `replay` are optional.
+`depart` and `replay` are optional. `depart` is an ISO time; without an offset it is read as India time. Live it may be up to 1 hour in the past and 48 hours ahead, on a replay it must be on the replayed day (default: that day's worst hour of rain). Otherwise 400 `bad_depart`.
 
 - `mode`: `"fastest"` or `"safest"`, as requested.
 - `depart`: departure time used for the rain forecast (ISO time).
+- Safest weighs each road on the rain at the hour you could first reach it: a road rated `MODERATE` or worse, or landslide-prone, costs 2x more where its nearest zone is at `WATCH` then and 4x more at `CRITICAL`. Fastest ignores rain.
 - `replay`: `null`, or the replayed date.
 - `distance_km`: route length in km (number).
 - `duration_min`: driving time in minutes (number).
@@ -29,7 +30,7 @@ Conventions:
   - `risk_class`: risk class of the stretch, or `null` where the road is outside Uttarakhand and has no score. Draw `null` as "no data", never as `LOW`.
   - `risk_source`: `surveyed` or `modelled`, or `null` when `risk_class` is `null`.
   - `landslide_prone`: `true` if the stretch is in a landslide-prone area.
-  - `forecast_rain_mm`: rain forecast for the time you reach it, in mm, or `null` if unknown.
+  - `forecast_rain_mm`: rain in the hour you reach it, in mm (the wettest of the stretch), from the nearest watched zone within 20 km; `null` if unknown. On a replay it is the rain that fell.
   - `report_id`: id of a community report within 50 m of this stretch, or `null`. If there are several, the verified one, then the newest. Not set on a replayed date.
 - `summary.km_by_class`: km of route in each risk class (`LOW`, `MODERATE`, `SIGNIFICANT`, `EXTREME`). Stretches with no score are left out, so these can sum to less than `distance_km`; `notes` then says how many km have no score.
 - `summary.extreme_segments`: number of segments rated `EXTREME`.
@@ -73,12 +74,12 @@ A **report** ([report.json](report.json)) is:
 - `kind`: `flooded`, `blocked` or `landslide`.
 - `note`: free text from the reporter (may be empty).
 - `created_at`: when it was posted (ISO time).
-- `trust`: `verified` once 2 other devices have confirmed it, otherwise `unverified`. Verified means confirmed, not proven: nobody has checked the road. Show `trust_reason` to the user as it is.
+- `trust`: `verified` once 2 other devices have confirmed it, or, for `flooded` and `landslide`, when 2.5 mm or more of rain fell around it (its ~11 km Open-Meteo cell) in the 72 hours before it was posted; otherwise `unverified`. Verified means confirmed, not proven: nobody has checked the road. Show `trust_reason` to the user as it is.
 - `trust_reason`: short sentence saying why it has that trust level.
 - `confirmations`: number of other devices that confirmed it.
 - `near_locality`: name of the nearest locality within 5 km, or `null`.
 
-A report never changes a route. It only marks the stretch it lies on (see `report_id` under `/route`).
+A report never changes the Fastest route; it marks the stretch it lies on (see `report_id` under `/route`). Safest steers around reports: roads within 50 m of an unverified report cost 20x more, of a verified one 1000x (all but blocked). A replayed date has no reports.
 
 ### GET /reports → [reports.json](reports.json)
 
@@ -121,12 +122,12 @@ Bad input of any kind gives 400 with `error` `bad_request` and `detail` naming t
 
 ## GET /warnings → [warnings.json](warnings.json)
 
-- `status`: `ok`, or `unavailable` if the official alert feed could not be read.
-- `as_of`: when the feed was last read (ISO time).
+- `status`: `ok`, or `unavailable` if the official alert feed could not be read. Never show "no warnings" when it is `unavailable`: `alerts` then holds the last list that was read, possibly empty.
+- `as_of`: when the feed was last read (ISO time), or `null` if it never has been.
 - `alerts[]`: current official alerts for Uttarakhand, each with:
   - `id`: alert id from the feed.
   - `headline`: headline in English.
-  - `headline_hi`: headline in Hindi.
+  - `headline_hi`: headline in Hindi, or `""` when the alert was issued in English only.
   - `severity`: severity as given by the feed, for example `Severe`.
   - `event`: event type, for example `Heavy Rain`.
   - `area`: area the alert covers.
@@ -143,7 +144,8 @@ Bad input of any kind gives 400 with `error` `bad_request` and `detail` naming t
 
 - `subscription`: the browser's PushSubscription as JSON (`endpoint`, `expirationTime`, `keys.p256dh`, `keys.auth`).
 - `zone_id`: id of the zone to get alerts for.
-- Response `ok`: `true` when saved.
+- Response `ok`: `true` when saved. An unknown `zone_id` gives 404; push not switched on (no VAPID keys) gives 503 `not_configured`, as `/push/public-key` does.
+- The server pushes `{title, body, zone_id}` once when the zone goes from not CRITICAL to CRITICAL.
 
 ## POST /sos, body [sos_request.json](sos_request.json) → [sos.json](sos.json)
 
@@ -151,11 +153,12 @@ Request:
 
 - `name`: name of the person in trouble.
 - `lat`, `lon`: their location.
-- `numbers[]`: phone numbers to text, with country code.
+- `numbers[]`: 1 to 5 phone numbers to text, with country code (`+` and 8 to 15 digits), otherwise 400 `bad_request`.
+- `share_with_responders` (optional, default `false`): also show this location, without the name or numbers, on `/responder/summary` for 24 hours.
 
 Response:
 
-- `status`: `sent` (the server sent the SMS) or `fallback` (the app should open the phone's SMS app with `sms_body`).
+- `status`: `sent` (the server sent the SMS through textbee) or `fallback` (the app should open the phone's SMS app with `sms_body`).
 - `sms_body`: the message text, written by the server.
 - `link`: map link to the location.
 
@@ -163,9 +166,9 @@ Response:
 
 - `as_of`: when the summary was made (ISO time).
 - `reports_last_24h`: number of community reports in the last 24 hours.
-- `critical_zones[]`: zones not SAFE, each `id`, `name`, `status`.
-- `shelters_count`: number of shelters known.
-- `sos_pings[]`: recent SOS locations, each `lat`, `lon`, `time`.
+- `critical_zones[]`: zones not SAFE, each `id`, `name`, `status`; `null` if the rain could not be read.
+- `shelters_count`: number of shelters known; `null` if the list has not been built.
+- `sos_pings[]`: SOS locations shared in the last 24 hours, newest first, each `lat`, `lon`, `time`.
 
 ## GET /layers/road-risk → [layer_road_risk.geojson](layer_road_risk.geojson)
 

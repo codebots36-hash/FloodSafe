@@ -160,7 +160,7 @@ export async function confirmReport(
   })
 }
 /** Fetch watched zones without falling back to the example contract file. */
-export async function getZones(): Promise<ZonesResponse> {
+export async function getZones(replay: string | null = null): Promise<ZonesResponse> {
   if (!API) {
     throw new Error(
       'VITE_API_URL is not set, so the app does not know where the FloodSafe API is.',
@@ -169,7 +169,7 @@ export async function getZones(): Promise<ZonesResponse> {
 
   let response: Response
   try {
-    response = await fetch(`${API}/zones`)
+    response = await fetch(`${API}/zones${replay ? `?replay=${replay}` : ''}`)
   } catch {
     throw new Error(`Could not reach the FloodSafe API at ${API}.`)
   }
@@ -193,7 +193,10 @@ export interface LatLon {
 }
 
 /** Fetch weather for a selected map point. */
-export async function getWeather(point: LatLon): Promise<WeatherResponse> {
+export async function getWeather(
+  point: LatLon,
+  replay: string | null = null,
+): Promise<WeatherResponse> {
   if (!API) {
     throw new Error(
       'VITE_API_URL is not set, so the app does not know where the FloodSafe API is.',
@@ -204,6 +207,7 @@ export async function getWeather(point: LatLon): Promise<WeatherResponse> {
     lat: String(point.lat),
     lon: String(point.lon),
   })
+  if (replay) params.set('replay', replay)
 
   let response: Response
   try {
@@ -226,16 +230,25 @@ export async function getWeather(point: LatLon): Promise<WeatherResponse> {
   return (await response.json()) as WeatherResponse
 }
 /** Throws the API's `detail` sentence when the response is not 200. */
+/** When to leave (ISO, India time) and which past day to replay; both optional. */
+export interface RouteWhen {
+  depart?: string | null
+  replay?: string | null
+}
+
 export async function getRoute(
   from: LatLon,
   to: LatLon,
   mode: RouteMode,
+  when: RouteWhen = {},
 ): Promise<RouteResponse> {
   const params = new URLSearchParams({
     from: `${from.lat},${from.lon}`,
     to: `${to.lat},${to.lon}`,
     mode,
   })
+  if (when.depart) params.set('depart', when.depart)
+  if (when.replay) params.set('replay', when.replay)
 
   if (!API) {
     throw new Error(
@@ -283,10 +296,11 @@ export interface RouteComparison {
 export async function getRouteComparison(
   from: LatLon,
   to: LatLon,
+  when: RouteWhen = {},
 ): Promise<RouteComparison> {
   const modes: RouteMode[] = ['safest', 'fastest']
   const settled = await Promise.allSettled(
-    modes.map((mode) => getRoute(from, to, mode)),
+    modes.map((mode) => getRoute(from, to, mode, when)),
   )
 
   const comparison: RouteComparison = {
@@ -313,5 +327,145 @@ export async function getRouteComparison(
   return comparison
 }
 
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!API) {
+    throw new Error(
+      'VITE_API_URL is not set, so the app does not know where the FloodSafe API is.',
+    )
+  }
 
+  let response: Response
+  try {
+    response = await fetch(`${API}${path}`, init)
+  } catch {
+    throw new Error(`Could not reach the FloodSafe API at ${API}.`)
+  }
 
+  if (!response.ok) {
+    let detail = `Request failed with status ${response.status}`
+    try {
+      const body: ApiError = await response.json()
+      if (body?.detail) detail = body.detail
+    } catch {
+      // Not the documented error shape; keep the status text.
+    }
+    throw new Error(detail)
+  }
+
+  return (await response.json()) as T
+}
+
+// ---- Shelters, hospitals, localities -----------------------------------
+
+export interface MapPlace {
+  id: string
+  name: string
+  /** OpenStreetMap type, e.g. shelter, hospital, clinic. */
+  kind: string
+  lat: number
+  lon: number
+  near_locality: string | null
+  source: string
+}
+
+export interface Locality {
+  id: string
+  name: string
+  parent: string | null
+  district: string
+  lat: number
+  lon: number
+}
+
+export const getShelters = () =>
+  request<{ items: MapPlace[] }>('/shelters').then((body) => body.items)
+
+export const getHospitals = () =>
+  request<{ items: MapPlace[] }>('/hospitals').then((body) => body.items)
+
+export const getLocalities = () =>
+  request<{ items: Locality[] }>('/localities').then((body) => body.items)
+
+// ---- SOS ----------------------------------------------------------------
+
+export interface SosRequest {
+  name: string
+  lat: number
+  lon: number
+  numbers: string[]
+  share_with_responders?: boolean
+}
+
+export interface SosResponse {
+  status: 'sent' | 'fallback'
+  sms_body: string
+  link: string
+}
+
+export const sendSos = (body: SosRequest) =>
+  request<SosResponse>('/sos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+export function getReporterId() {
+  const key = 'floodsafe-reporter-id'
+  try {
+    let id = localStorage.getItem(key)
+    if (!id) {
+      id = `anon-${crypto.randomUUID().slice(0, 8)}`
+      localStorage.setItem(key, id)
+    }
+    return id
+  } catch {
+    return 'anon-unknown'
+  }
+}
+
+// ---- Official warnings, push, responder ------------------------------------
+
+export interface OfficialAlert {
+  id: string
+  headline: string
+  /** Empty when the alert was issued in English only. */
+  headline_hi: string
+  severity: string
+  event: string
+  area: string
+  sender: string
+  effective: string
+  expires: string
+  link: string
+}
+
+export interface WarningsResponse {
+  status: 'ok' | 'unavailable'
+  as_of: string | null
+  alerts: OfficialAlert[]
+}
+
+export const getWarnings = () => request<WarningsResponse>('/warnings')
+
+export interface ResponderSummary {
+  as_of: string
+  reports_last_24h: number
+  critical_zones: { id: string; name: string; status: ZoneStatus }[] | null
+  shelters_count: number | null
+  sos_pings: { lat: number; lon: number; time: string }[]
+}
+
+export const getResponderSummary = () => request<ResponderSummary>('/responder/summary')
+
+export const getHealth = () =>
+  request<{ status: string; nodes: number; edges: number }>('/health')
+
+export const getPushKey = () =>
+  request<{ public_key: string }>('/push/public-key').then((body) => body.public_key)
+
+export const subscribePush = (subscription: PushSubscriptionJSON, zoneId: string) =>
+  request<{ ok: boolean }>('/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription, zone_id: zoneId }),
+  })
