@@ -257,6 +257,7 @@ export default function RiskMap() {
   const [mapReady, setMapReady] = useState(false)
   const [zones, setZones] = useState<Zone[] | null>(null)
   const [showAllZones, setShowAllZones] = useState(false)
+  const [zoneSearch, setZoneSearch] = useState('')
   const [rainPoint, setRainPoint] = useState<Endpoint | null>(null)
   const [weather, setWeather] = useState<WeatherResponse | null>(null)
   const [reports, setReports] = useState<CommunityReport[] | null>(null)
@@ -285,6 +286,10 @@ export default function RiskMap() {
   const [hovered, setHovered] = useState<RouteMode | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const filteredZones = zones?.filter((zone) =>
+    `${zone.name} ${zone.district}`.toLocaleLowerCase().includes(zoneSearch.trim().toLocaleLowerCase()),
+  ) ?? null
 
   useEffect(() => {
     let active = true
@@ -999,13 +1004,30 @@ export default function RiskMap() {
             <span><i className="zone-dot zone-dot-critical" /> CRITICAL</span>
           </div>
         </div>
+        {zones && zones.length > 0 && (
+          <div className="zones-search">
+            <label htmlFor="zones-search-input">Search zones</label>
+            <input
+              id="zones-search-input"
+              type="search"
+              value={zoneSearch}
+              onChange={(event) => setZoneSearch(event.target.value)}
+              placeholder="Search by zone or district"
+            />
+            <span className="zones-search-count">
+              {filteredZones?.length ?? 0} {filteredZones?.length === 1 ? 'zone' : 'zones'}
+            </span>
+          </div>
+        )}
         {zones === null ? (
           <p className="zones-waiting" role="status">Waiting for live data</p>
         ) : zones.length === 0 ? (
           <p className="zones-waiting" role="status">No watched zones available.</p>
+        ) : filteredZones?.length === 0 ? (
+          <p className="zones-waiting" role="status">No zones match your search.</p>
         ) : (
           <ul className="zones-list">
-            {zones.slice(0, showAllZones ? zones.length : 4).map((zone) => (
+            {filteredZones?.slice(0, showAllZones ? filteredZones.length : 4).map((zone) => (
               <li key={zone.id}>
                 <button
                   type="button"
@@ -1031,14 +1053,14 @@ export default function RiskMap() {
             ))}
           </ul>
         )}
-        {zones && zones.length > 4 && (
+        {filteredZones && filteredZones.length > 4 && (
           <button
             type="button"
             className="zones-toggle"
             aria-expanded={showAllZones}
             onClick={() => setShowAllZones((visible) => !visible)}
           >
-            {showAllZones ? 'Show fewer zones' : `Show all ${zones.length} zones`}
+            {showAllZones ? 'Show fewer zones' : `Show all ${filteredZones.length} zones`}
           </button>
         )}
       </section>
