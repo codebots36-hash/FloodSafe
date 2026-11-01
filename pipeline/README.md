@@ -13,6 +13,7 @@ Scripts that download the raw data and build the files the API serves. Raw downl
 | 7 | `build_places.py` | Localities, shelters, hospitals and the 200 watched zones | places files |
 | 8 | `fetch_era5.py`, then `calibrate_thresholds.py` | Fetches 24 monsoons of rain and calibrates the WATCH and CRITICAL depths against recorded floods | rain thresholds |
 | 9 | `backtest_routes.py` | Tests whether Safest avoids NASA catalogue landslides it never trained on (5 spatial folds, landslide flags refitted per fold) more often than random stretches of the same Fastest routes, plus the Dharali 2025 and Kedarnath 2013 replays through the API | `out/backtest_routes.json` |
+| 10 | `tune_penalties.py` | Chooses Safest's landslide penalty on the landslides of folds 1-3 and tests that choice once on folds 4-5, which never inform it, on the backtest's own trips and controls | `out/tune_penalties.json` |
 | 10 | `package_api_data.py` | Copies the graph and map layers into `api/data/` so a deployed API can start; commit the result | `api/data/graph/`, `api/data/layers/` |
 
 `relay_rainfall.py` is not a build step: it fetches live rain and sends it to a running API whose host is over Open-Meteo's free quota (see the main [README](../README.md#run-it)).
