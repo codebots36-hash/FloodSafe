@@ -169,6 +169,8 @@ const HI: Record<string, string> = {
   'Nearest to From, in a straight line.': '"कहाँ से" के सबसे पास, सीधी दूरी में।',
   'Nearest to where you are, in a straight line.': 'आप जहाँ हैं उसके सबसे पास, सीधी दूरी में।',
   'No shelters are known.': 'कोई आश्रय ज्ञात नहीं है।',
+  'Shelters are public halls from OpenStreetMap, not official relief camps.':
+    'आश्रय OpenStreetMap के सार्वजनिक भवन हैं, आधिकारिक राहत शिविर नहीं।',
   'No hospitals are known.': 'कोई अस्पताल ज्ञात नहीं है।',
   'You are offline. Your last searched routes still work; new routes need internet.':
     'आप ऑफ़लाइन हैं। आपकी पिछली खोजों के रास्ते अब भी चलेंगे; नए रास्तों के लिए इंटरनेट चाहिए।',

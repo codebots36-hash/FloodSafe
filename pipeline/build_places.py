@@ -44,6 +44,15 @@ PBF = os.path.join(RAW, "osm", "uk.osm.pbf")
 BASINS = os.path.join(RAW, "basins", "hybas_as_lev08_v1c.shp")
 
 SHELTER_AMENITIES = ["shelter", "community_centre", "social_facility"]
+# OSM's amenity=shelter is mostly a rain or trek shelter (caves, gazebos, shepherd
+# huts), and community_centre / social_facility include guest houses, villas and
+# nursing homes. Only public buildings a crowd can gather in are kept as shelters.
+PUBLIC_HALL = re.compile(r"\b(hall|bhawan|bhavan|auditorium|community|panchayat|kendra|manch|"
+                         r"convention|mandap|rain ?basera|janmilan)\b", re.I)
+# Hospitals that cannot take an emergency: eye, dental, IVF, animal, Ayurvedic...
+SPECIALIST = re.compile(r"\b(eyes?|dental|ent|ivf|fertility|veterinary|animal|laser|skin|"
+                        r"ayurvedic|homoeopathic|homeopathic|blood bank)\b", re.I)
+GENERAL = re.compile(r"\b(general|multi)", re.I)  # "Skin ... and General Hospital" stays
 PLACE_TYPES = ["city", "town", "village", "hamlet", "suburb", "neighbourhood"]
 TOWNS = ["city", "town"]
 PARENT_KM = 15
@@ -169,9 +178,16 @@ def build_amenities(osm, state, loc_utm, localities):
     utm, lon, lat = points(a)
     near = nearest(xy(loc_utm), xy(utm), NEAR_LOCALITY_KM * 1000)
     out = {"shelters": [], "hospitals": []}
+    dropped = {"shelters": 0, "hospitals": 0}
     for i, row in a.iterrows():
         kind = row["amenity"]
-        out["hospitals" if kind == "hospital" else "shelters"].append({
+        group = "hospitals" if kind == "hospital" else "shelters"
+        name = row["name"]
+        if (SPECIALIST.search(name) and not GENERAL.search(name) if group == "hospitals"
+                else not PUBLIC_HALL.search(name)):
+            dropped[group] += 1
+            continue
+        out[group].append({
             "id": f"osm:{row['osm_type']}/{row['id']}",
             "name": row["name"],
             "kind": kind,
@@ -180,7 +196,8 @@ def build_amenities(osm, state, loc_utm, localities):
             "near_locality": localities[near[i]]["name"] if near[i] >= 0 else None,
             "source": "OpenStreetMap",
         })
-    log(f"shelters: {len(out['shelters'])}, hospitals: {len(out['hospitals'])}", t0)
+    log(f"shelters: {len(out['shelters'])}, hospitals: {len(out['hospitals'])} "
+        f"(dropped {dropped['shelters']} non-public shelters, {dropped['hospitals']} specialist hospitals)", t0)
     return out
 
 

@@ -363,7 +363,8 @@ export default function RoutePanel({
         ))}
       </div>
       <p className="route-quick-note">
-        {t(from ? 'Nearest to From, in a straight line.' : 'Nearest to where you are, in a straight line.')}
+        {t(from ? 'Nearest to From, in a straight line.' : 'Nearest to where you are, in a straight line.')}{' '}
+        {t('Shelters are public halls from OpenStreetMap, not official relief camps.')}
       </p>
 
       {offline && (
