@@ -1,4 +1,4 @@
-"""FloodSafe v2 API.
+"""FloodSafe API.
 
 Serves the endpoints described in contracts/. Implemented so far:
   GET /health             the server is up
@@ -71,7 +71,7 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="FloodSafe v2", lifespan=lifespan)
+app = FastAPI(title="FloodSafe", lifespan=lifespan)
 
 # The React app runs on another laptop and origin, so allow every origin.
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -105,7 +105,7 @@ async def http_error(_request, exc: StarletteHTTPException):
 
 @app.get("/", include_in_schema=False)
 def index():
-    return {"name": "FloodSafe v2 API", "health": "/health", "docs": "/docs",
+    return {"name": "FloodSafe API", "health": "/health", "docs": "/docs",
             "contracts": "https://github.com/codebots36-hash/FloodSafe/tree/main/contracts"}
 
 

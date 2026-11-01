@@ -27,7 +27,7 @@ import requests
 from app.weather import IST
 
 FEED = "https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml"
-HEADERS = {"User-Agent": "FloodSafe/2.0 (+https://github.com/codebots36-hash/FloodSafe)"}
+HEADERS = {"User-Agent": "FloodSafe (+https://github.com/codebots36-hash/FloodSafe)"}
 TIMEOUT_S = 15
 REFRESH_S = 10 * 60
 MAX_DOCS = 30            # CAP documents opened per refresh; each is read once and kept
