@@ -1,75 +1,36 @@
-# React + TypeScript + Vite
+# FloodSafe web app
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The FloodSafe app: React, TypeScript and Vite, with MapLibre GL for the map. It installs as a PWA and keeps the last route, shelters and viewed map tiles for use without signal.
 
-Currently, two official plugins are available:
+## Run it
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Create `.env.local` in this folder with the API's address (no trailing slash):
 
 ```
+VITE_API_URL=http://localhost:8000
+```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Then:
 
 ```
+npm install
+npm run dev
+```
+
+Restart the dev server after changing `.env.local`. `npm run build` type-checks and builds to `dist/`, and `npm run lint` runs ESLint.
+
+## What is where
+
+| File | What it does |
+| --- | --- |
+| `src/App.tsx` | app shell and navigation |
+| `src/api.ts` | calls to the API; shapes match [contracts/](../contracts/README.md) |
+| `src/components/RiskMap.tsx` | map with road risk, zones, reports and shelters |
+| `src/components/RoutePanel.tsx` | Fastest and Safest routes, departure time and the route verdict |
+| `src/components/ReplayMode.tsx` | replay a past day on the rain that actually fell |
+| `src/components/OfficialWarnings.tsx` | NDMA SACHET warnings, shown as issued |
+| `src/components/NotificationSettings.tsx` | push alerts when your zone turns CRITICAL |
+| `src/components/FloodGuidance.tsx` | a zone's rain against its WATCH and CRITICAL levels, with advice for its status |
+| `src/components/ResponderDashboard.tsx` | responder view of reports, zones not SAFE, shelters and shared SOS pings |
+| `src/settings.ts` | language (English or Hindi), text size and the replay date |
+| `public/sw.js`, `public/manifest.webmanifest` | service worker and install manifest |

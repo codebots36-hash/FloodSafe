@@ -1,7 +1,31 @@
-# FloodSafe 
-
+# FloodSafe
 
 FloodSafe is flood-aware navigation for Uttarakhand, India. It routes people around roads at risk of flash floods and landslides, using real, published hazard, terrain and rainfall data, and gives live rain, official warnings, community reports, shelters and an SOS message for when things go wrong.
+
+- Web app: https://floodsafe-web.onrender.com
+- API: https://floodsafe-api-4nzc.onrender.com (free tier; the first request after a quiet spell takes a minute to wake it)
+
+## From prototype to project
+
+FloodSafe began as a small prototype that showed flood-aware routing could work: a map, a risk score per road and a route that steered around the worst of it. This repository grows that idea into a full project:
+
+- risk for every road in the state, built from published hazard, terrain, soil and land-cover data rather than hand-set values
+- a landslide model trained and tested on recorded landslides
+- routing that judges each road on the rain forecast for the hour you would reach it
+- live rain, rain-triggered zone alerts and official NDMA warnings
+- community reports, SOS messages and a responder dashboard
+- an installable app that keeps working without signal
+- replay of past disasters (Kedarnath 2013, Dharali 2025) on the rain that actually fell
+- tests, published API contracts and a reproducible data pipeline
+
+## Project layout
+
+| Folder | What is in it |
+|---|---|
+| `api/` | FastAPI backend: routing, rain, zones, reports, warnings, push alerts, SOS |
+| `web/` | React + MapLibre app, installable as a PWA ([web/README.md](web/README.md)) |
+| `pipeline/` | scripts that download the raw data and build everything the API serves ([pipeline/README.md](pipeline/README.md)) |
+| `contracts/` | one example response per endpoint, with every field explained ([contracts/README.md](contracts/README.md)) |
 
 ## Team
 
