@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getPushKey, getZones, subscribePush, type Zone } from '../api'
-import { useT } from '../settings'
+import { useSettings, useT } from '../settings'
 
 function keyBytes(base64url: string) {
   const base64 = (base64url + '='.repeat((4 - (base64url.length % 4)) % 4))
@@ -15,6 +15,7 @@ const STANDALONE = window.matchMedia('(display-mode: standalone)').matches
 /** Subscribe this device to a push alert when one zone turns CRITICAL. */
 export default function NotificationSettings() {
   const t = useT()
+  const { replay } = useSettings()
   const [zones, setZones] = useState<Zone[]>([])
   const [zoneId, setZoneId] = useState('')
   const [busy, setBusy] = useState(false)
@@ -45,6 +46,18 @@ export default function NotificationSettings() {
         }))
       await subscribePush(subscription.toJSON(), zoneId)
       const name = zones.find((zone) => zone.id === zoneId)?.name ?? zoneId
+      // On a replay, show the alert this device would have got that day.
+      const past = replay ? (await getZones(replay)).zones.find((zone) => zone.id === zoneId) : null
+      if (past?.status === 'CRITICAL') {
+        await registration.showNotification(`${past.name} is CRITICAL for flooding`, {
+          body: `${past.rain_mm.h24} mm of rain in 24 h on ${replay}. Avoid travel near rivers and check official warnings.`,
+          icon: '/icon-192.png',
+          tag: past.id,
+          data: { url: '/#guidance' },
+        })
+        setMessage(`Done. ${name} was CRITICAL on ${replay}, so the alert it would have sent is shown now.`)
+        return
+      }
       setMessage(`Done. This device will be alerted when ${name} turns CRITICAL.`)
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not turn on alerts.')

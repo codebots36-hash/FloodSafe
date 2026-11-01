@@ -265,7 +265,6 @@ function Portal() {
         <nav className="portal-nav">
           <a href="#live-status">{t('System Status')}</a>
           <a href="#guidance">{t('Flood Guidance')}</a>
-          <a href="#ffgs">FFGS</a>
           <a href="#services">{t('Services')}</a>
           <a href="#hazard-reports">{t('Hazard Reports')}</a>
           <a className="nav-cta" href={MAP_HASH} target="_blank" rel="noopener">{t('Open Map Tool')}</a>
@@ -401,11 +400,6 @@ function Portal() {
           <a className="primary-button" href={MAP_HASH} target="_blank" rel="noopener">
             Open the full-screen map →
           </a>
-        </section>
-
-        <section id="ffgs" className="portal-section">
-          <h2>Flash Flood Guidance</h2>
-          <p>Check rainfall conditions and local risk before travelling.</p>
         </section>
 
         <section id="services" className="portal-section">

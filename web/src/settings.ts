@@ -159,6 +159,10 @@ const HI: Record<string, string> = {
   'Leave on': 'प्रस्थान',
   'Worst hour': 'सबसे भारी वर्षा का घंटा',
   'Now': 'अभी',
+  'Pick two places, or click the map to set': 'दो जगहें चुनें, या मानचित्र पर क्लिक करके सेट करें',
+  'Both the safest and the fastest route are fetched.': 'सबसे सुरक्षित और सबसे तेज़, दोनों रास्ते लाए जाते हैं।',
+  'Fetching the safest and fastest routes — the safest one can take about a second.':
+    'सबसे सुरक्षित और सबसे तेज़ रास्ते लाए जा रहे हैं — सुरक्षित रास्ते में लगभग एक सेकंड लग सकता है।',
   'Each stretch is judged on the rain at the hour you reach it (India time).': 'हर हिस्से को उस घंटे की वर्षा से आँका जाता है जब आप वहाँ पहुँचेंगे (भारतीय समय)।',
   'Search a place, e.g. Rishikesh': 'स्थान खोजें, जैसे ऋषिकेश',
   'Flood hazard area': 'बाढ़ खतरा क्षेत्र',

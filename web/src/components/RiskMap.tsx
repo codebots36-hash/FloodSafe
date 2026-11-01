@@ -351,7 +351,10 @@ function savedEndpoints(): { from: Endpoint | null; to: Endpoint | null } {
 export default function RiskMap() {
   const { replay } = useSettings()
   const t = useT()
-  const [depart, setDepart] = useState('')
+  // A departure belongs to the replay (or live) it was picked in; switching drops it.
+  const [picked, setPicked] = useState({ replay, depart: '' })
+  const depart = picked.replay === replay ? picked.depart : ''
+  const setDepart = (value: string) => setPicked({ replay, depart: value })
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
   const rainPopup = useRef<Popup | null>(null)

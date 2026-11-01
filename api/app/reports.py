@@ -198,6 +198,9 @@ def create(graph, body, ip):
     check_ip(ip, now)
     check_place(graph, body.lat, body.lon)
     note = re.sub(r"[\x00-\x1f\x7f]", " ", body.note).strip()
+    # The weather call can take seconds, so it runs before the transaction opens.
+    near = nearest_locality(body.lat, body.lon)
+    rain = rain_near(body.lat, body.lon) if body.kind in RAIN_KINDS else None
 
     with db() as con:
         recent = con.execute(
@@ -213,8 +216,6 @@ def create(graph, body, ip):
             raise RoutingError("rate_limited", f"At most {MAX_REPORTS_PER_REPORTER} reports an hour "
                                "from one device.", 429)
 
-        near = nearest_locality(body.lat, body.lon)
-        rain = rain_near(body.lat, body.lon) if body.kind in RAIN_KINDS else None
         for _ in range(5):
             report_id = "r_" + secrets.token_hex(3)
             try:
