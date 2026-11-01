@@ -58,7 +58,7 @@ from build_road_risk import GRAPH, prone_spans, sample_spans, to_cells
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "api"))
 from app.graph import RoadGraph  # noqa: E402
-from app.routing import MAX_DETOUR, MAX_SNAP_M, safest_weights  # noqa: E402
+from app.routing import MAX_DETOUR, MAX_SNAP_M, PENALTIES, safest_weights  # noqa: E402
 
 CACHE = os.path.join(os.path.dirname(FFPI_CACHE), "backtest")
 RESULT_PATH = os.path.join(OUT, "backtest_routes.json")
@@ -161,7 +161,10 @@ def near_spans(tree, span, xy, radius):
     return np.unique(span[tree.query_ball_point(xy, radius)])
 
 
-def route_backtest(graph, X, y, events_xy, folds, span_info):
+def route_backtest(graph, X, y, events_xy, folds, span_info, candidates=None):
+    """candidates: {name: {"strict": table, "mild": table}}, the penalty tables
+    Safest is judged under, all on the same trips and controls. Default: the API's."""
+    candidates = candidates or {"api": PENALTIES}
     span, pts_xy, row, col, in_state, n_span = span_info
     t0 = time.time()
     F = road_features(row, col, in_state)
@@ -195,17 +198,18 @@ def route_backtest(graph, X, y, events_xy, folds, span_info):
     node_xy = np.column_stack(to_utm.transform(np.asarray(graph.node_lon)[[n for _, n in stops]],
                                                np.asarray(graph.node_lat)[[n for _, n in stops]]))
     csr = (graph.csr_indptr, graph.csr_indices, graph.csr_edge_id)
-    length = np.asarray(graph.edge_len_m)
     rng = np.random.default_rng(SEED)
     weighted = {}
 
-    def matrix(k, level):
-        if (k, level) not in weighted:
+    def matrix(k, level, name):
+        # Only the weights are kept per (fold, level, table); the CSR structure is shared.
+        if (k, level, name) not in weighted:
             graph.edge_landslide = flags[k]
-            m = graph.csr.copy()
-            m.data = np.maximum(safest_weights(graph, level)[graph.csr_edge_id], 1e-3)
-            weighted[(k, level)] = m
-        return weighted[(k, level)]
+            weighted[(k, level, name)] = np.maximum(
+                safest_weights(graph, level, penalties=candidates[name][level])[graph.csr_edge_id], 1e-3)
+        m = graph.csr.copy()
+        m.data = weighted[(k, level, name)]
+        return m
 
     encounters = []
     for i, (_, s) in enumerate(stops):
@@ -223,27 +227,36 @@ def route_backtest(graph, X, y, events_xy, folds, span_info):
                 if np.hypot(*(ends - slide_xy[e]).T).min() < END_CLEAR_M:
                     continue
                 k = slide_fold[e]
-                if (k, "strict") not in trees:
-                    trees[(k, "strict")] = dijkstra(matrix(k, "strict"), indices=s, return_predecessors=True)[1]
-                safe = path_edges(trees[(k, "strict")], *csr, s, t)
-                if length[safe].sum() > MAX_DETOUR * length[fast].sum():
-                    if (k, "mild") not in trees:
-                        trees[(k, "mild")] = dijkstra(matrix(k, "mild"), indices=s, return_predecessors=True)[1]
-                    safe = path_edges(trees[(k, "mild")], *csr, s, t)
-                safe_spans = set(geom_id[safe].tolist())
-
                 pool = np.concatenate([order[starts[g]:starts[g + 1]] for g in fast_spans])
                 pool = pool[eligible[pool]]
                 pool = pool[np.hypot(*(pts_xy[pool][:, None, :] - ends[None]).transpose(2, 0, 1)).min(1)
                             >= END_CLEAR_M]
                 control = pts_xy[rng.choice(pool)] if len(pool) else None
+                control_near = None if control is None else {r: set(near_spans(tree, span, control, r))
+                                                             for r in RADII_M}
+
+                safest = {}
+                for name in candidates:
+                    if (k, "strict", name) not in trees:
+                        trees[(k, "strict", name)] = dijkstra(matrix(k, "strict", name), indices=s,
+                                                              return_predecessors=True)[1]
+                    safe = path_edges(trees[(k, "strict", name)], *csr, s, t)
+                    if graph.travel_s[safe].sum() > MAX_DETOUR * graph.travel_s[fast].sum():
+                        if (k, "mild", name) not in trees:
+                            trees[(k, "mild", name)] = dijkstra(matrix(k, "mild", name), indices=s,
+                                                                return_predecessors=True)[1]
+                        safe = path_edges(trees[(k, "mild", name)], *csr, s, t)
+                    safe_spans = set(geom_id[safe].tolist())
+                    safest[name] = {
+                        "time_ratio": float(graph.travel_s[safe].sum() / graph.travel_s[fast].sum()),
+                        "avoided": {r: not (near[r][e] & safe_spans) for r in RADII_M},
+                        "control_avoided": None if control is None else
+                            {r: not (control_near[r] & safe_spans) for r in RADII_M},
+                    }
                 encounters.append({
-                    "slide": e, "trip": (s, t, float(graph.travel_s[fast].sum())),
-                    "control_spans": None if control is None else near_spans(tree, span, control, MAIN_RADIUS_M),
-                    "time_ratio": float(graph.travel_s[safe].sum() / graph.travel_s[fast].sum()),
-                    "avoided": {r: not (near[r][e] & safe_spans) for r in RADII_M},
-                    "control_avoided": None if control is None else
-                        {r: not (set(near_spans(tree, span, control, r)) & safe_spans) for r in RADII_M},
+                    "slide": e, "fold": int(k), "trip": (s, t, float(graph.travel_s[fast].sum())),
+                    "control_spans": None if control is None else list(control_near[MAIN_RADIUS_M]),
+                    "safest": safest,
                 })
         if (i + 1) % 10 == 0:
             log(f"routes from {i + 1}/{len(stops)} towns, {len(encounters)} encounters", t0)
@@ -271,6 +284,11 @@ def way_around(graph, csr_span, s, t, blocked, fast_s):
     m.data[np.isin(csr_span, blocked)] = np.inf
     cost = dijkstra(m, indices=s, limit=MAX_DETOUR * fast_s)
     return bool(np.isfinite(cost[t]))
+
+
+def as_candidate(encounters, name):
+    """The encounters as Safest under one penalty table saw them, for summarise()."""
+    return [dict(e, **e["safest"][name]) for e in encounters]
 
 
 def summarise(encounters):
@@ -363,7 +381,7 @@ def main():
         "held_out": "landslide flags from a model refitted without the fold holding each landslide",
         "control": f"a random road point on the same Fastest route >= {CONTROL_MIN_M // 1000} km "
                    "from any catalogued landslide",
-        "summary": summarise(encounters),
+        "summary": summarise(as_candidate(encounters, "api")),
         "named_replays": named_replays(),
         "limits": [
             "Catalogue points are placed only to 1-10 km and moved to the nearest road, "

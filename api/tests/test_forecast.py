@@ -20,12 +20,14 @@ from app.routing import route as dijkstra_route
 
 RISHIKESH = "30.0869,78.2676"
 UTTARKASHI = "30.729,78.443"
+RUDRAPRAYAG = "30.28656,78.98072"
+CHAMOLI = "30.41497,79.36845"
 client = TestClient(app)
 
 
-def route(**params):
+def route(start=RISHIKESH, end=UTTARKASHI, **params):
     query = "&".join(f"{k}={v}" for k, v in params.items())
-    return client.get(f"/route?from={RISHIKESH}&to={UTTARKASHI}&{query}")
+    return client.get(f"/route?from={start}&to={end}&{query}")
 
 
 def test_the_hour_lookup_reads_each_zones_own_clock():
@@ -82,7 +84,9 @@ def test_with_no_rain_the_timed_search_matches_dijkstra():
 
 
 def test_a_replayed_safest_route_moves_with_the_departure_hour():
-    by_hour = {h: route(mode="safest", replay="2013-06-16", depart=f"2013-06-16T{h:02d}:00").json()
+    # Rudraprayag to Chamoli: Safest is 70.7 km leaving at midnight, 109.3 km from 3 am.
+    by_hour = {h: route(RUDRAPRAYAG, CHAMOLI, mode="safest", replay="2013-06-16",
+                        depart=f"2013-06-16T{h:02d}:00").json()
                for h in (0, 3, 9)}
     assert len({b["distance_km"] for b in by_hour.values()}) > 1
     for hour, body in by_hour.items():

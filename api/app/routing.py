@@ -26,14 +26,17 @@ RISK_CLASSES = ["LOW", "MODERATE", "SIGNIFICANT", "EXTREME"]
 # scores 1/2/4/8 and all but blocks EXTREME; "mild" is the fallback when strict
 # sends the route on a huge detour. Roads outside the state have no score and
 # are costed like MODERATE, so Safest is not lured out of the state onto roads
-# we know nothing about. A modelling choice, not an official rule.
+# we know nothing about. Strict's landslide penalty was chosen by
+# pipeline/tune_penalties.py on landslides held apart from its test; mild keeps
+# x2 so the fallback really is milder. The rest are a modelling choice, not an
+# official rule.
 PENALTIES = {
     "strict": {"LOW": 1, "MODERATE": 4, "SIGNIFICANT": 16, "EXTREME": 1000,
-               "unscored": 4, "landslide": 2},
+               "unscored": 4, "landslide": 32},
     "mild": {"LOW": 1, "MODERATE": 2, "SIGNIFICANT": 4, "EXTREME": 8,
              "unscored": 2, "landslide": 2},
 }
-MAX_DETOUR = 3  # strict Safest longer than this x Fastest -> use "mild"
+MAX_DETOUR = 3  # strict Safest taking longer than this x Fastest's time -> use "mild"
 RAIN_FACTOR = np.array([1.0, 2.0, 4.0])  # SAFE / WATCH / CRITICAL, see _rain_prone
 # No drive in the state takes a day, so route_timed's search guide only looks
 # this far ahead. A longer trip would still route, maybe not on the cheapest path.
@@ -228,10 +231,11 @@ def route_timed(graph, start, end, weights, leave_ts, sky, zone):
     return _result(graph, nodes, edge_ids, snapped)
 
 
-def safest_weights(graph, level, extra=None):
+def safest_weights(graph, level, extra=None, penalties=None):
     """Per-directed-edge Safest cost for a PENALTIES level, times an optional
-    per-edge multiplier (forecast rain, community reports)."""
-    p = PENALTIES[level]
+    per-edge multiplier (forecast rain, community reports). penalties replaces
+    PENALTIES[level], for the backtest to try other tables."""
+    p = penalties or PENALTIES[level]
     lut = np.full(256, p["unscored"], dtype=np.float64)
     for code, name in enumerate(RISK_CLASSES):
         lut[code] = p[name]

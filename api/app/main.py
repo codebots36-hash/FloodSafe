@@ -192,12 +192,12 @@ def get_route(
                 return route_timed(graph, start, end, weights, leave.timestamp(), sky, zone)
             return route(graph, start, end, weights)
 
-        fastest_m = result["distance_m"]
+        fastest_s = result["duration_s"]
         result = safest("strict")
-        if result["distance_m"] > MAX_DETOUR * fastest_m:
+        if result["duration_s"] > MAX_DETOUR * fastest_s:
             result = safest("mild")
-            notes.append(f"Avoiding every risky road meant a route over {MAX_DETOUR} times "
-                         "longer, so this one uses milder risk penalties.")
+            notes.append(f"Avoiding every risky road meant a trip over {MAX_DETOUR} times "
+                         "as long, so this one uses milder risk penalties.")
 
     edge_ids = result["edge_ids"]
     rain_mm = None
