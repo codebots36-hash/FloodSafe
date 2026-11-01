@@ -33,6 +33,19 @@ FloodSafe began as a small prototype that showed flood-aware routing could work:
 - Waheed: React app
 - Shourya: React app
 
+## Branches
+
+`main` is what is deployed. Work happens on the branches below and reaches `main` through pull requests.
+
+| Branch | Owner | What it is for |
+|---|---|---|
+| `main` | everyone | the working app; the web app and API deploy from it |
+| `shivang` | Shivang | data pipeline and backend API: road graph, flood and landslide risk, Safest routing, rain, zones, reports, SACHET warnings, push alerts, SOS and the responder API |
+| `waheed` | Waheed | the map page: route search and compare, risk layer, precise location, shelters, hospitals, report pins and SOS |
+| `shourya` | Shourya | the rest of the web app and its deploy: rain card, zones list, API settings and the static site |
+| `web` | Waheed, Shourya | the first shared web app branch (risk map, real routes, compare, live layers, zones panel), merged in PR #3; kept for reference |
+| `shiv/time-dependent-routing` | Shivang | one feature: time-dependent A* so Safest judges each road on the rain when the route reaches it, merged in PR #12 |
+
 ## How it works
 
 1. **Risk map.** A Flash Flood Potential Index (Smith 2003) is computed for the whole state at 30 m from slope, soil, land cover and forest density. Where the state hazard atlas covers a place, its surveyed flood zones are used instead and marked `surveyed`; everywhere else the class is `modelled`.
