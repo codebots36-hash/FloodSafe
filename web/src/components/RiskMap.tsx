@@ -1060,7 +1060,8 @@ export default function RiskMap() {
     [],
   )
 
-  const handleSubmit = useCallback(async () => {
+  // `leave` is passed when a departure was just applied and state may not hold it yet.
+  const handleSubmit = useCallback(async (leave: string = depart) => {
     if (!from || !to) return
 
     setLoading(true)
@@ -1076,7 +1077,7 @@ export default function RiskMap() {
     const comparison = await getRouteComparison(
       { lat: from.lat, lon: from.lon },
       { lat: to.lat, lon: to.lon },
-      { depart: depart || null, replay },
+      { depart: leave || null, replay },
     )
 
     setRoutes({ safest: comparison.safest, fastest: comparison.fastest })

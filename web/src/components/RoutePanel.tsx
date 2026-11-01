@@ -23,7 +23,8 @@ interface RoutePanelProps {
   onSelectFrom: (value: string) => void
   onSelectTo: (value: string) => void
   onHover: (mode: RouteMode | null) => void
-  onSubmit: () => void
+  /** Fetch both routes, leaving at `depart` (the time just applied, which state may not hold yet). */
+  onSubmit: (depart: string) => void
   /** "YYYY-MM-DDTHH:MM" in India time, or '' to leave now (on a replay, at the day's worst rain). */
   depart: string
   onDepartChange: (value: string) => void
@@ -217,6 +218,15 @@ export default function RoutePanel({
   const hasResult = Boolean(routes.safest || routes.fastest)
   // The live departure window, fixed when the panel opens.
   const [openedAt] = useState(() => Date.now())
+  // The time being picked, applied only by OK or Get routes. It belongs to the
+  // departure it was picked over, so a reset from outside (Now, replay) clears it.
+  const [draft, setDraft] = useState({ over: depart, value: depart })
+  const picked = draft.over === depart ? draft.value : depart
+  const apply = () => {
+    setDraft({ over: picked, value: picked })
+    onDepartChange(picked)
+    if (from && to) onSubmit(picked)
+  }
 
   // One scale for both cards so the bars can be compared across them.
   const maxKm = Math.max(
@@ -282,11 +292,14 @@ export default function RoutePanel({
         <span>{replay ? `${t('Leave on')} ${replay}` : t('Leave')}</span>
         <input
           type="datetime-local"
-          value={depart}
+          value={picked}
           min={replay ? `${replay}T00:00` : istLocal(new Date(openedAt))}
           max={replay ? `${replay}T23:59` : istLocal(new Date(openedAt + 47 * 3_600_000))}
-          onChange={(event) => onDepartChange(event.target.value)}
+          onChange={(event) => setDraft({ over: depart, value: event.target.value })}
         />
+        <button type="button" className="route-depart-ok" onClick={apply} disabled={!picked || loading}>
+          {t('OK')}
+        </button>
         {depart && (
           <button type="button" onClick={() => onDepartChange('')}>
             {replay ? t('Worst hour') : t('Now')}
@@ -301,7 +314,7 @@ export default function RoutePanel({
         <button
           type="button"
           className="route-submit"
-          onClick={onSubmit}
+          onClick={apply}
           disabled={loading || !from || !to}
         >
           {loading ? t('Finding routes…') : t('Get routes')}

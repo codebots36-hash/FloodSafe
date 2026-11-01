@@ -159,6 +159,7 @@ const HI: Record<string, string> = {
   'Leave on': 'प्रस्थान',
   'Worst hour': 'सबसे भारी वर्षा का घंटा',
   'Now': 'अभी',
+  'OK': 'ठीक है',
   'Pick two places, or click the map to set': 'दो जगहें चुनें, या मानचित्र पर क्लिक करके सेट करें',
   'Both the safest and the fastest route are fetched.': 'सबसे सुरक्षित और सबसे तेज़, दोनों रास्ते लाए जाते हैं।',
   'Fetching the safest and fastest routes — this can take a few seconds.':
