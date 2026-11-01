@@ -61,9 +61,10 @@ export default function OfficialWarnings() {
               const hindi = lang === 'hi' && alert.headline_hi
               return (
                 <li key={alert.id} className="official-alert">
-                  <strong>{alert.event || alert.severity}</strong>
-                  <span className="official-alert-severity">{alert.severity}</span>
+                  <strong>{t(alert.event || alert.severity)}</strong>
+                  <span className="official-alert-severity">{t(alert.severity)}</span>
                   <p lang={hindi ? 'hi' : 'en'}>{hindi ? alert.headline_hi : alert.headline}</p>
+                  {lang === 'hi' && !hindi && <small>{t('Issued in English only; shown as issued.')}</small>}
                   <small>
                     {alert.sender} · {alert.area}
                     {alert.expires && ` · ${t('Until')} ${formatWhen(alert.expires)}`}
@@ -78,7 +79,7 @@ export default function OfficialWarnings() {
           </ul>
         )}
         {feed?.as_of && (
-          <p className="data-note">As of {formatWhen(feed.as_of)}</p>
+          <p className="data-note">{t('As of')} {formatWhen(feed.as_of)}</p>
         )}
       </div>
       <span className="warning-icon">!</span>
