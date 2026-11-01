@@ -339,6 +339,10 @@ function reportPopup(report: CommunityReport) {
 
 const ENDPOINTS_KEY = 'floodsafe-last-trip'
 
+// On a phone the map is small: the layer list starts closed, and shelters and
+// hospitals (about 480 dots) appear only once you zoom in past the whole state.
+const PLACES_MIN_ZOOM = IS_PHONE ? 9 : 0
+
 /** The last trip's ends, so an offline reload can ask for the cached route again. */
 function savedEndpoints(): { from: Endpoint | null; to: Endpoint | null } {
   try {
@@ -864,6 +868,7 @@ export default function RiskMap() {
           id: ids.layer,
           type: 'circle',
           source: ids.source,
+          minzoom: PLACES_MIN_ZOOM,
           layout: {
             visibility: placeVisibility.current[key] ? 'visible' : 'none',
           },
@@ -1197,7 +1202,8 @@ export default function RiskMap() {
       />
 
       <div className="risk-map-stage" ref={stageRef}>
-        <div className="risk-map-controls">
+        <details className="risk-map-controls" open={!IS_PHONE}>
+          <summary>{t('Layers')}</summary>
           <label>
             <input
               type="checkbox"
@@ -1243,51 +1249,22 @@ export default function RiskMap() {
             {t('Community reports')}
           </label>
 
-        </div>
+        </details>
 
-        <div
-          style={{
-            position: 'absolute',
-            top: 12,
-            right: 56,
-            zIndex: 8,
-            display: 'flex',
-            gap: 8,
-          }}
-        >
+        <div className="risk-map-actions">
           <button
             type="button"
+            className="risk-map-report"
             onClick={() => setReportMode((on) => !on)}
             aria-pressed={reportMode}
-            style={{
-              padding: '10px 14px',
-              border: 0,
-              borderRadius: 6,
-              background: reportMode ? '#6b7280' : '#c92727',
-              color: '#fff',
-              font: 'inherit',
-              fontWeight: 700,
-              cursor: 'pointer',
-              boxShadow: '0 2px 10px rgb(0 0 0 / .3)',
-            }}
           >
             {reportMode ? t('Cancel') : t('Report a problem')}
           </button>
           <button
             type="button"
+            className="risk-map-fullscreen"
             onClick={toggleFullscreen}
             aria-label={isFullscreen ? 'Exit full screen' : 'Full screen map'}
-            style={{
-              padding: '10px 14px',
-              border: '1px solid #dbe3e8',
-              borderRadius: 6,
-              background: '#fff',
-              color: '#1f2937',
-              font: 'inherit',
-              fontWeight: 700,
-              cursor: 'pointer',
-              boxShadow: '0 2px 10px rgb(0 0 0 / .3)',
-            }}
           >
             {isFullscreen ? t('Exit full screen') : t('Full screen')}
           </button>

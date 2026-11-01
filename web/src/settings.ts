@@ -171,6 +171,7 @@ const HI: Record<string, string> = {
   'Shelters': 'आश्रय',
   'Hospitals': 'अस्पताल',
   'Community reports': 'सामुदायिक रिपोर्ट',
+  'Layers': 'परतें',
   'Report a problem': 'समस्या बताएँ',
   'Cancel': 'रद्द करें',
   'Full screen': 'पूरी स्क्रीन',

@@ -997,6 +997,46 @@ footer {
   cursor: pointer;
 }
 
+.risk-map-controls summary {
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.risk-map-controls[open] summary {
+  margin-bottom: 4px;
+}
+
+.risk-map-actions {
+  position: absolute;
+  top: 12px;
+  right: 56px;
+  z-index: 8;
+  display: flex;
+  gap: 8px;
+}
+
+.risk-map-actions button {
+  padding: 10px 14px;
+  border: 1px solid #dbe3e8;
+  border-radius: 6px;
+  background: #fff;
+  color: #1f2937;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.3);
+}
+
+.risk-map-actions .risk-map-report {
+  border-color: transparent;
+  background: #c92727;
+  color: #fff;
+}
+
+.risk-map-actions .risk-map-report[aria-pressed='true'] {
+  background: #6b7280;
+}
+
 .risk-map-legend {
   bottom: 12px;
   left: 12px;
@@ -1584,15 +1624,20 @@ footer {
 
   .risk-map-canvas { height: 70vh; min-height: 360px; }
 
+  /* Buttons in one slim row along the top; the layer list, closed until
+     tapped, sits under them so neither covers the other. */
+  .risk-map-actions { top: 8px; right: 50px; gap: 6px; }
+  .risk-map-actions button { padding: 6px 10px; font-size: 13px; }
   .risk-map-controls {
-    top: 8px;
+    top: 50px;
     left: 8px;
     right: auto;
-    max-width: 55%;
-    padding: 8px;
+    max-width: 60%;
+    padding: 6px 10px;
     font-size: 12px;
     gap: 6px;
   }
+  .risk-map-stage .zone-marker { width: 0.75rem; height: 0.75rem; }
   .risk-map-controls label { min-height: 32px; }
   .risk-map-controls button { min-height: 40px; }
 
