@@ -714,11 +714,23 @@ footer {
   fill: #1b1f23;
 }
 
-.route-safe,
-.route-fast {
+.route-illustration path {
   fill: none;
-  stroke-width: 4;
   stroke-linecap: round;
+}
+
+.route-illustration g {
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.route-hit {
+  stroke: transparent;
+  stroke-width: 28;
+}
+
+.route-line {
+  stroke-width: 4;
   transition: stroke-width 150ms ease;
 }
 
@@ -728,12 +740,55 @@ footer {
 
 .route-fast {
   stroke: #8b2424;
+}
+
+.route-fast .route-line {
   stroke-dasharray: 8 8;
 }
 
-.route-safe:hover,
-.route-fast:hover {
+/* One route traced: it thickens and draws itself; the other fades back. */
+.route-illustration[data-traced='safe'] .route-safe .route-line,
+.route-illustration[data-traced='fast'] .route-fast .route-line {
   stroke-width: 7;
+}
+
+.route-illustration[data-traced='safe'] .route-fast,
+.route-illustration[data-traced='fast'] .route-safe {
+  opacity: 0.25;
+}
+
+.route-trace {
+  stroke-width: 7;
+  stroke-dasharray: 1;
+  animation: route-trace 1.2s ease-out both;
+  pointer-events: none;
+}
+
+@keyframes route-trace {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-trace { animation: none; }
+}
+
+.route-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.route-legend button[aria-pressed='true'] {
+  border-color: #cbd5df;
+  font-weight: 700;
 }
 
 .route-legend,

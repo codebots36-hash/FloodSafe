@@ -123,6 +123,59 @@ function MapPage() {
   )
 }
 
+const ILLUSTRATION_ROUTES = {
+  safe: { label: 'Safest route', d: 'M42 278 C100 250 110 265 150 280 S220 300 260 220 S220 130 280 90 S370 35 420 35' },
+  fast: { label: 'Fastest route', d: 'M42 278 C100 205 145 195 190 215 S270 220 310 165 S385 90 420 35' },
+} as const
+type IllustrationRoute = keyof typeof ILLUSTRATION_ROUTES
+
+/** The portal's two-route sketch: hover, tap or pick a legend entry to trace one. */
+function RouteIllustration() {
+  const [traced, setTraced] = useState<IllustrationRoute | null>(null)
+  // A tap fires mouseenter then click, so click selects rather than toggles.
+  const pick = (route: IllustrationRoute) => setTraced(route)
+  const routes = Object.keys(ILLUSTRATION_ROUTES) as IllustrationRoute[]
+
+  return (
+    <div className="route-illustration" data-traced={traced ?? undefined}>
+      <p>Illustrative example — hover or tap a route below</p>
+      <svg viewBox="0 0 460 340" role="img" aria-label="Illustration comparing fastest and safest routes">
+        {routes.map((route) => (
+          <g
+            key={route}
+            className={`route-${route}`}
+            onMouseEnter={() => setTraced(route)}
+            onMouseLeave={() => setTraced(null)}
+            onClick={() => pick(route)}
+          >
+            {/* The drawn line is 4 px; this wide clear stroke is what the pointer hits. */}
+            <path className="route-hit" d={ILLUSTRATION_ROUTES[route].d} />
+            <path className="route-line" d={ILLUSTRATION_ROUTES[route].d} />
+            {traced === route && <path className="route-trace" d={ILLUSTRATION_ROUTES[route].d} pathLength={1} />}
+          </g>
+        ))}
+        <circle cx="42" cy="278" r="7" />
+        <circle cx="420" cy="35" r="7" />
+      </svg>
+      <div className="route-legend">
+        {routes.map((route) => (
+          <button
+            key={route}
+            type="button"
+            aria-pressed={traced === route}
+            onMouseEnter={() => setTraced(route)}
+            onMouseLeave={() => setTraced(null)}
+            onClick={() => pick(route)}
+          >
+            <i className={`legend-${route}`} /> {ILLUSTRATION_ROUTES[route].label}
+          </button>
+        ))}
+      </div>
+      <small>Hover or tap either route to trace it live</small>
+    </div>
+  )
+}
+
 function ReplayBanner() {
   const t = useT()
   const { replay } = useSettings()
@@ -345,20 +398,7 @@ function Portal() {
             )}
           </div>
 
-          <div className="route-illustration">
-            <p>Illustrative example — hover or tap a route below</p>
-            <svg viewBox="0 0 460 340" role="img" aria-label="Illustration comparing fastest and safest routes">
-              <path className="route-safe" d="M42 278 C100 250 110 265 150 280 S220 300 260 220 S220 130 280 90 S370 35 420 35" />
-              <path className="route-fast" d="M42 278 C100 205 145 195 190 215 S270 220 310 165 S385 90 420 35" />
-              <circle cx="42" cy="278" r="7" />
-              <circle cx="420" cy="35" r="7" />
-            </svg>
-            <div className="route-legend">
-              <span><i className="legend-safe" /> Safest route</span>
-              <span><i className="legend-fast" /> Fastest route</span>
-            </div>
-            <small>Hover or tap either route to trace it live</small>
-          </div>
+          <RouteIllustration />
         </section>
 
         <section id="live-status" className="portal-section">
