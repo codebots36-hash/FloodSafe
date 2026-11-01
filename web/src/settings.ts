@@ -227,3 +227,10 @@ export function useT() {
   const { lang } = useSettings()
   return (text: string) => translate(lang, text)
 }
+
+/** "1 Nov 2026, 12:26 pm": a numeric 01/11/2026 reads as 11 January to many visitors. */
+export function formatWhen(when: string | number | Date) {
+  return new Date(when).toLocaleString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  })
+}

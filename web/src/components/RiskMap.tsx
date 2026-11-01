@@ -35,7 +35,7 @@ import {
   type WeatherResponse,
 } from '../api'
 import { routeVerdict } from '../routeVerdict'
-import { useSettings, useT } from '../settings'
+import { formatWhen, useSettings, useT } from '../settings'
 import RoutePanel from './RoutePanel'
 import './Zones.css'
 import {
@@ -329,7 +329,7 @@ function reportPopup(report: CommunityReport) {
   return popupBody([
     strongLine(look.label),
     report.note || 'No note left.',
-    Number.isNaN(when.getTime()) ? '' : when.toLocaleString(),
+    Number.isNaN(when.getTime()) ? '' : formatWhen(when),
     badge,
     report.trust_reason,
     `${report.confirmations} confirmation${report.confirmations === 1 ? '' : 's'}`,
@@ -1484,7 +1484,7 @@ export default function RiskMap() {
                 </div>
                 <p className="community-report-note">{report.note || 'No note provided.'}</p>
                 <p className="community-report-meta">
-                  {new Date(report.created_at).toLocaleString()} · Near {report.near_locality}
+                  {formatWhen(report.created_at)} · Near {report.near_locality}
                 </p>
                 <p className="community-report-trust-reason">{report.trust_reason}</p>
                 <div className="community-report-footer">
@@ -1534,7 +1534,7 @@ export default function RiskMap() {
                 })}
               </div>
               <div className="rain-meta">
-                <span>As of {new Date(weather.as_of).toLocaleString()}</span>
+                <span>As of {formatWhen(weather.as_of)}</span>
                 <span>Source: {weather.source}</span>
               </div>
             </>

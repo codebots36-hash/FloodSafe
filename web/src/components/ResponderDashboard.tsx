@@ -4,7 +4,7 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { FeatureCollection } from 'geojson'
 import { getReports, getResponderSummary, type CommunityReport, type ResponderSummary } from '../api'
-import { useT } from '../settings'
+import { formatWhen, useT } from '../settings'
 import './Zones.css'
 
 setWorkerUrl(workerUrl)
@@ -163,7 +163,7 @@ export default function ResponderDashboard() {
       {error && <p role="alert">{error}</p>}
       {summary && (
         <p className="data-note">
-          As of {new Date(summary.as_of).toLocaleString()}. Heat = community reports; red dots = SOS
+          As of {formatWhen(summary.as_of)}. Heat = community reports; red dots = SOS
           locations people chose to share.
         </p>
       )}

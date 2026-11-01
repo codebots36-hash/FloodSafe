@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getZones, type ZonesResponse, type ZoneStatus } from '../api'
-import { useSettings, useT } from '../settings'
+import { formatWhen, useSettings, useT } from '../settings'
 
 const ZONE_KEY = 'floodsafe-guidance-zone'
 
@@ -166,7 +166,7 @@ export default function FloodGuidance() {
       {data && (
         <p className="guidance-note">
           {data.threshold_basis} {data.source === 'replay' ? `Replay of ${data.replay}.` : ''} As of{' '}
-          {new Date(data.as_of).toLocaleString()} ({data.source}).
+          {formatWhen(data.as_of)} ({data.source}).
         </p>
       )}
       <p className="guidance-note">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getWarnings, type WarningsResponse } from '../api'
-import { useSettings, useT } from '../settings'
+import { formatWhen, useSettings, useT } from '../settings'
 
 const REFRESH_MS = 10 * 60 * 1000
 
@@ -65,7 +65,7 @@ export default function OfficialWarnings() {
                   <p lang={hindi ? 'hi' : 'en'}>{hindi ? alert.headline_hi : alert.headline}</p>
                   <small>
                     {alert.sender} · {alert.area}
-                    {alert.expires && ` · ${t('Until')} ${new Date(alert.expires).toLocaleString()}`}
+                    {alert.expires && ` · ${t('Until')} ${formatWhen(alert.expires)}`}
                   </small>
                   <a href={alert.link} target="_blank" rel="noopener noreferrer">
                     sachet.ndma.gov.in
@@ -76,7 +76,7 @@ export default function OfficialWarnings() {
           </ul>
         )}
         {feed?.as_of && (
-          <p className="data-note">As of {new Date(feed.as_of).toLocaleString()}</p>
+          <p className="data-note">As of {formatWhen(feed.as_of)}</p>
         )}
       </div>
       <span className="warning-icon">!</span>
