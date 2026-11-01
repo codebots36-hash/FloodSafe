@@ -4,7 +4,9 @@ services:
     runtime: python
     plan: free
     rootDir: api
-    buildCommand: pip install -r requirements.txt
+    # Importing app.routing compiles the Numba route search into app/__pycache__,
+    # so a cold start loads it instead of compiling (Numba recompiles if the CPU differs).
+    buildCommand: pip install -r requirements.txt && python -c "import app.routing"
     # One process on purpose: the rate limits and the rainfall cache live in memory.
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
