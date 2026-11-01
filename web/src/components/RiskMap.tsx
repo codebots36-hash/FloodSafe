@@ -353,22 +353,27 @@ function savedEndpoints(): { from: Endpoint | null; to: Endpoint | null } {
   }
 }
 
-// The last search that brought routes back. Kept apart from ENDPOINTS_KEY,
-// which a long press clears, and with its departure time, so asking again
+export type PlaceKind = 'shelter' | 'hospital'
+
+// The last search that brought routes back, one per kind: an ordinary search,
+// a trip to the nearest shelter and one to the nearest hospital, so a shelter
+// search never pushes out the hospital route. Kept apart from ENDPOINTS_KEY,
+// which a long press clears, and with the departure time, so asking again
 // builds the same request the service worker kept: that is what works offline.
 const LAST_SEARCH_KEY = 'floodsafe-last-search'
+export type SearchSlot = 'search' | PlaceKind
 export type LastSearch = { from: Endpoint; to: Endpoint; depart: string }
+export type LastSearches = Partial<Record<SearchSlot, LastSearch>>
 
-function savedLastSearch(): LastSearch | null {
+function savedLastSearches(): LastSearches {
   try {
     const saved = JSON.parse(localStorage.getItem(LAST_SEARCH_KEY) ?? 'null')
-    return saved?.from && saved?.to ? { depart: '', ...saved } : null
+    // A copy saved before there were three is one ordinary search.
+    return saved?.from && saved?.to ? { search: { depart: '', ...saved } } : saved ?? {}
   } catch {
-    return null
+    return {}
   }
 }
-
-export type PlaceKind = 'shelter' | 'hospital'
 
 /** The place nearest to a point in a straight line, with that distance in km. */
 function nearestPlace(places: MapPlace[], point: Endpoint) {
@@ -461,7 +466,7 @@ export default function RiskMap() {
   const [hovered, setHovered] = useState<RouteMode | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [lastSearch, setLastSearch] = useState<LastSearch | null>(savedLastSearch)
+  const [lastSearches, setLastSearches] = useState<LastSearches>(savedLastSearches)
   const [nearestBusy, setNearestBusy] = useState<PlaceKind | null>(null)
   const [offline, setOffline] = useState(() => !navigator.onLine)
   useEffect(() => {
@@ -1177,10 +1182,12 @@ export default function RiskMap() {
     [],
   )
 
-  // `leave` and `ends` are passed when they were just set and state may not hold them yet.
+  // `leave` and `ends` are passed when they were just set and state may not hold
+  // them yet; `slot` says which last search a route that comes back is kept as.
   const handleSubmit = useCallback(async (
     leave: string = depart,
     ends: { from: Endpoint; to: Endpoint } | null = null,
+    slot: SearchSlot = 'search',
   ) => {
     const start = ends?.from ?? from
     const end = ends?.to ?? to
@@ -1208,28 +1215,31 @@ export default function RiskMap() {
     if (!comparison.safest && !comparison.fastest) {
       setError(navigator.onLine
         ? comparison.failures[0]?.detail ?? 'No route came back.'
-        : t('You are offline. Only your last searched route is saved on this phone.'))
+        : t('You are offline. Only your last searched routes are saved on this phone.'))
     } else {
       setFailures(comparison.failures)
-      const search = { from: start, to: end, depart: leave }
-      setLastSearch(search)
-      try {
-        localStorage.setItem(LAST_SEARCH_KEY, JSON.stringify(search))
-      } catch {
-        // Then only this session remembers it.
-      }
+      setLastSearches((current) => {
+        const next = { ...current, [slot]: { from: start, to: end, depart: leave } }
+        try {
+          localStorage.setItem(LAST_SEARCH_KEY, JSON.stringify(next))
+        } catch {
+          // Then only this session remembers them.
+        }
+        return next
+      })
     }
     setLoading(false)
   }, [from, to, depart, replay, t])
 
-  const openLastSearch = () => {
-    if (!lastSearch) return
-    setFrom(lastSearch.from)
-    setTo(lastSearch.to)
-    setDepart(lastSearch.depart)
+  const openLastSearch = (slot: SearchSlot) => {
+    const search = lastSearches[slot]
+    if (!search) return
+    setFrom(search.from)
+    setTo(search.to)
+    setDepart(search.depart)
     pickTarget.current = 'from'
     setNextClickSets('from')
-    void handleSubmit(lastSearch.depart, lastSearch)
+    void handleSubmit(search.depart, search, slot)
   }
 
   // Routes from From (or, with no From, where the phone is) to the nearest
@@ -1259,7 +1269,7 @@ export default function RiskMap() {
       setTo(end)
       pickTarget.current = 'from'
       setNextClickSets('from')
-      await handleSubmit(depart, { from: start, to: end })
+      await handleSubmit(depart, { from: start, to: end }, kind)
     } catch (err) {
       setError(errorDetail(err))
     } finally {
@@ -1375,7 +1385,7 @@ export default function RiskMap() {
         replay={replay}
         onNearest={(kind) => void goToNearest(kind)}
         nearestBusy={nearestBusy}
-        lastSearch={lastSearch}
+        lastSearches={lastSearches}
         onLastSearch={openLastSearch}
         offline={offline}
       />

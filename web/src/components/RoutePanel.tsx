@@ -32,11 +32,19 @@ interface RoutePanelProps {
   /** Route to the nearest shelter or hospital from From (or the phone's location). */
   onNearest: (kind: 'shelter' | 'hospital') => void
   nearestBusy: 'shelter' | 'hospital' | null
-  /** The last search that brought routes back; asking it again works offline. */
-  lastSearch: { from: Endpoint; to: Endpoint } | null
-  onLastSearch: () => void
+  /** The last ordinary, shelter and hospital searches; asking one again works offline. */
+  lastSearches: Partial<Record<SearchSlot, { from: Endpoint; to: Endpoint }>>
+  onLastSearch: (slot: SearchSlot) => void
   offline: boolean
 }
+
+type SearchSlot = 'search' | 'shelter' | 'hospital'
+
+const SEARCH_SLOTS: [SearchSlot, string][] = [
+  ['search', 'Last searched'],
+  ['shelter', 'Last shelter route'],
+  ['hospital', 'Last hospital route'],
+]
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -222,7 +230,7 @@ export default function RoutePanel({
   replay,
   onNearest,
   nearestBusy,
-  lastSearch,
+  lastSearches,
   onLastSearch,
   offline,
 }: RoutePanelProps) {
@@ -354,19 +362,24 @@ export default function RoutePanel({
 
       {offline && (
         <p className="route-offline" role="status">
-          {t('You are offline. Your last searched route still works; new routes need internet.')}
+          {t('You are offline. Your last searched routes still work; new routes need internet.')}
         </p>
       )}
-      {lastSearch && (
-        <button
-          type="button"
-          className={`route-last${offline ? ' is-offline' : ''}`}
-          onClick={onLastSearch}
-          disabled={loading}
-        >
-          {t('Last searched')}: {lastSearch.from.label} → {lastSearch.to.label}
-        </button>
-      )}
+      {SEARCH_SLOTS.map(([slot, title]) => {
+        const search = lastSearches[slot]
+        return search && (
+          <button
+            key={slot}
+            type="button"
+            className={`route-last${offline ? ' is-offline' : ''}`}
+            onClick={() => onLastSearch(slot)}
+            disabled={loading}
+          >
+            <strong>{t(title)}</strong>
+            <span>{search.from.label} → {search.to.label}</span>
+          </button>
+        )
+      })}
 
       {loading && (
         <p className="route-loading" role="status">

@@ -162,14 +162,16 @@ const HI: Record<string, string> = {
   'Hospital': 'अस्पताल',
   'Your location': 'आपका स्थान',
   'Last searched': 'पिछली खोज',
+  'Last shelter route': 'पिछला आश्रय रास्ता',
+  'Last hospital route': 'पिछला अस्पताल रास्ता',
   'Nearest to From, in a straight line.': '"कहाँ से" के सबसे पास, सीधी दूरी में।',
   'Nearest to where you are, in a straight line.': 'आप जहाँ हैं उसके सबसे पास, सीधी दूरी में।',
   'No shelters are known.': 'कोई आश्रय ज्ञात नहीं है।',
   'No hospitals are known.': 'कोई अस्पताल ज्ञात नहीं है।',
-  'You are offline. Your last searched route still works; new routes need internet.':
-    'आप ऑफ़लाइन हैं। आपकी पिछली खोज का रास्ता अब भी चलेगा; नए रास्तों के लिए इंटरनेट चाहिए।',
-  'You are offline. Only your last searched route is saved on this phone.':
-    'आप ऑफ़लाइन हैं। इस फ़ोन पर केवल आपकी पिछली खोज का रास्ता सहेजा गया है।',
+  'You are offline. Your last searched routes still work; new routes need internet.':
+    'आप ऑफ़लाइन हैं। आपकी पिछली खोजों के रास्ते अब भी चलेंगे; नए रास्तों के लिए इंटरनेट चाहिए।',
+  'You are offline. Only your last searched routes are saved on this phone.':
+    'आप ऑफ़लाइन हैं। इस फ़ोन पर केवल आपकी पिछली खोजों के रास्ते सहेजे गए हैं।',
   'Could not get a route.': 'रास्ता नहीं मिल सका।',
   'Leave on': 'प्रस्थान',
   'Worst hour': 'सबसे भारी वर्षा का घंटा',

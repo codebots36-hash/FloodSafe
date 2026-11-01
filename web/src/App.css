@@ -1232,11 +1232,17 @@ footer {
 }
 
 .route-last {
-  display: block;
+  display: grid;
+  gap: 2px;
   width: 100%;
-  margin-top: 0.6rem;
+  margin-top: 0.5rem;
   text-align: left;
   overflow-wrap: anywhere;
+}
+
+.route-last span {
+  font-weight: 400;
+  font-size: 0.9em;
 }
 
 /* Offline, the last search is the one route that still works, so it stands out. */
