@@ -311,7 +311,7 @@ export default function RoutePanel({
       {loading && (
         <p className="route-loading" role="status">
           <span className="route-spinner" aria-hidden="true" />
-          {t('Fetching the safest and fastest routes — the safest one can take about a second.')}
+          {t('Fetching the safest and fastest routes — this can take a few seconds.')}
         </p>
       )}
 
