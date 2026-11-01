@@ -150,8 +150,10 @@ def build_localities(osm, state, districts):
             parent = p.at[town_idx[near[i]], "name"]
         else:
             parent = f"{district[i]} district"
-        lid = next(c for c in (slug(name), slug(f"{name} {district[i]}"),
-                               f"{slug(name)}-{row['osm_type']}-{row['id']}") if c not in seen)
+        # A name with no Latin letters slugs to "", which would clash with "none chosen".
+        base = slug(name) or f"{row['osm_type']}-{row['id']}"
+        lid = next(c for c in (base, f"{base}-{slug(district[i])}",
+                               f"{base}-{row['osm_type']}-{row['id']}") if c not in seen)
         seen.add(lid)
         items.append({"id": lid, "name": name, "parent": parent, "district": district[i],
                       "lat": round(float(lat[i]), 5), "lon": round(float(lon[i]), 5)})
@@ -205,6 +207,8 @@ def build_zones(localities, loc_utm, place):
 
     candidates = []
     for i in np.flatnonzero(ok):
+        if not re.search(r"[A-Za-z]", localities[i]["name"]):  # OSM has it only in Devanagari
+            continue
         r0, c0 = rows[i] - r, cols[i] - r
         if r0 < 0 or c0 < 0 or r0 + 2 * r + 1 > ffpi_class.shape[0] or c0 + 2 * r + 1 > ffpi_class.shape[1]:
             continue
