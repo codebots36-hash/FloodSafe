@@ -87,6 +87,23 @@ def test_a_point_at_sea_is_refused():
     assert response.json()["error"] == "too_far_from_road"
 
 
+def test_the_same_start_and_destination_is_refused_not_a_crash():
+    for mode in ("fastest", "safest"):
+        response = client.get(f"/route?from={RISHIKESH}&to={RISHIKESH}&mode={mode}")
+        assert response.status_code == 400, mode
+        assert response.json()["error"] == "same_place"
+
+
+def test_the_client_address_is_the_visitor_behind_the_proxy():
+    from starlette.requests import Request
+
+    from app.main import client_ip
+    scope = {"type": "http", "client": ("10.0.0.9", 1),
+             "headers": [(b"x-forwarded-for", b"203.0.113.7, 10.0.0.9")]}
+    assert client_ip(Request(scope)) == "203.0.113.7"
+    assert client_ip(Request({"type": "http", "client": ("10.0.0.9", 1), "headers": []})) == "10.0.0.9"
+
+
 
 def test_places_match_the_contracts():
     import json

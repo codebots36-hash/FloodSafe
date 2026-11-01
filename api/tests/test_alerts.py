@@ -120,3 +120,23 @@ def test_sos_falls_back_to_the_phone_and_shares_only_when_asked(monkeypatch):
 
     bad = client.post("/sos", json={**request, "numbers": ["98765"]})
     assert (bad.status_code, bad.json()["error"]) == (400, "bad_request")
+
+
+def test_sos_still_gives_the_text_when_the_database_is_down(monkeypatch):
+    import sqlite3
+    from contextlib import contextmanager
+
+    @contextmanager
+    def broken():
+        raise sqlite3.OperationalError("database is down")
+        yield
+
+    monkeypatch.delenv("TEXTBEE_API_KEY", raising=False)
+    monkeypatch.setattr(sos, "db", broken)
+    request = {**contract("sos_request.json"), "numbers": ["+919876543210"],
+               "share_with_responders": True}
+    response = client.post("/sos", json=request)
+    assert response.status_code == 200
+    assert response.json()["status"] == "fallback" and response.json()["sms_body"]
+    summary = client.get("/responder/summary")
+    assert summary.status_code == 200 and summary.json()["sos_pings"] == []

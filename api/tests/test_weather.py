@@ -94,7 +94,9 @@ def test_replaying_the_2013_flood_returns_the_rain_that_fell():
 
 
 def test_a_replay_date_that_cannot_work_says_why():
-    for bad in ("tomorrow", "2099-01-01", "1850-01-01"):
+    # Three days ago: ERA5 is not published yet, and an empty day would be kept for good.
+    recent = (datetime.datetime.now(weather.IST).date() - datetime.timedelta(days=3)).isoformat()
+    for bad in ("tomorrow", "2099-01-01", "1850-01-01", recent):
         response = client.get("/weather", params={**RISHIKESH, "replay": bad})
         assert response.status_code == 400, bad
         assert response.json()["error"] == "bad_replay"

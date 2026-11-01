@@ -98,20 +98,27 @@ def notify(zones_response):
     status = {z["id"]: z for z in zones_response["zones"]}
     with db() as con:
         subs = con.execute("SELECT endpoint, subscription, zone_id, last_status FROM push_subs").fetchall()
-        for sub in subs:
-            zone = status.get(sub["zone_id"])
-            if zone is None or zone["status"] == sub["last_status"]:
+    # Sent with no transaction open: each push can wait seconds on the push
+    # service, and a held SQLite write lock would stall report saving meanwhile.
+    gone, changed = [], []
+    for sub in subs:
+        zone = status.get(sub["zone_id"])
+        if zone is None or zone["status"] == sub["last_status"]:
+            continue
+        if zone["status"] == "CRITICAL":
+            payload = {"title": f"{zone['name']} is CRITICAL for flooding",
+                       "body": f"{zone['rain_mm']['h24']} mm of rain in 24 h. Avoid travel "
+                               "near rivers and check official warnings.",
+                       "zone_id": zone["id"]}
+            if not _send(sub["subscription"], payload):
+                gone.append((sub["endpoint"],))
                 continue
-            if zone["status"] == "CRITICAL":
-                payload = {"title": f"{zone['name']} is CRITICAL for flooding",
-                           "body": f"{zone['rain_mm']['h24']} mm of rain in 24 h. Avoid travel "
-                                   "near rivers and check official warnings.",
-                           "zone_id": zone["id"]}
-                if not _send(sub["subscription"], payload):
-                    con.execute("DELETE FROM push_subs WHERE endpoint = ?", (sub["endpoint"],))
-                    continue
-            con.execute("UPDATE push_subs SET last_status = ? WHERE endpoint = ?",
-                        (zone["status"], sub["endpoint"]))
+        changed.append((zone["status"], sub["endpoint"]))
+    with db() as con:
+        for row in gone:
+            con.execute("DELETE FROM push_subs WHERE endpoint = ?", row)
+        for row in changed:
+            con.execute("UPDATE push_subs SET last_status = ? WHERE endpoint = ?", row)
 
 
 if __name__ == "__main__":

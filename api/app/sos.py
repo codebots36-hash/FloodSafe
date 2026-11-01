@@ -18,7 +18,7 @@ import requests
 from pydantic import BaseModel, Field
 
 from app.routing import RoutingError
-from app.store import db, schema
+from app.store import DBError, db, schema
 
 TEXTBEE = "https://api.textbee.dev/api/v1/gateway/devices/{device}/send-sms"
 PHONE = r"^\+\d{8,15}$"
@@ -52,9 +52,13 @@ def send(body):
     message = f"SOS from {name} via FloodSafe. I need help. My location: {where}"
 
     if body.share_with_responders:
-        with db() as con:
-            con.execute("INSERT INTO sos_pings VALUES (?, ?, ?)",
-                        (round(body.lat, 4), round(body.lon, 4), time.time()))
+        # The text matters more than the dashboard: a database fault must not stop it.
+        try:
+            with db() as con:
+                con.execute("INSERT INTO sos_pings VALUES (?, ?, ?)",
+                            (round(body.lat, 4), round(body.lon, 4), time.time()))
+        except DBError as exc:
+            print(f"[sos] ping not saved: {exc}", flush=True)
 
     status = "fallback"
     key, device = os.environ.get("TEXTBEE_API_KEY"), os.environ.get("TEXTBEE_DEVICE_ID")

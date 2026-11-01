@@ -402,11 +402,16 @@ export interface SosResponse {
   link: string
 }
 
+// A sleeping free server can take a minute to answer; in an emergency the
+// phone's own SMS app is opened instead after this long.
+const SOS_TIMEOUT_MS = 8_000
+
 export const sendSos = (body: SosRequest) =>
   request<SosResponse>('/sos', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(SOS_TIMEOUT_MS),
   })
 
 export function getReporterId() {
@@ -449,7 +454,8 @@ export const getWarnings = () => request<WarningsResponse>('/warnings')
 
 export interface ResponderSummary {
   as_of: string
-  reports_last_24h: number
+  /** null when the database could not be read. */
+  reports_last_24h: number | null
   critical_zones: { id: string; name: string; status: ZoneStatus }[] | null
   shelters_count: number | null
   sos_pings: { lat: number; lon: number; time: string }[]

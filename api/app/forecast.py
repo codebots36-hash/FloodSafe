@@ -90,7 +90,9 @@ def load(replay=None):
     """(Forecast, peak) for now, or for a replayed day; peak is that day's
     worst hour (None live). Raises WeatherUnavailable when the rain is missing."""
     cache_key = (_hour(), replay)
-    if cache_key not in _cache:
+    # Read once: another request may clear the cache between a check and a lookup.
+    entry = _cache.get(cache_key)
+    if entry is None:
         zones = _load("zones")["zones"]
         points = [(z["lat"], z["lon"]) for z in zones]
         if replay:
@@ -104,9 +106,10 @@ def load(replay=None):
         if replay:
             at = _worst_hour(found, replay)
             peak = series(next(iter(found.values()))[0])[0][at]
+        entry = (Forecast(zones, found), peak)
         _cache.clear()
-        _cache[cache_key] = (Forecast(zones, found), peak)
-    return _cache[cache_key]
+        _cache[cache_key] = entry
+    return entry
 
 
 def parse_depart(text):

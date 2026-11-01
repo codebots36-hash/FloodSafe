@@ -72,6 +72,8 @@ def _snap_ends(graph, start, end):
                 "too_far_from_road",
                 f"The {label} is {metres / 1000:.1f} km from the nearest road.",
             )
+    if source == target:
+        raise RoutingError("same_place", "The start and destination are the same place on the road map.")
     return source, target, {"start": source_m, "end": target_m}
 
 

@@ -404,6 +404,7 @@ export default function RiskMap() {
   const [zoneSearch, setZoneSearch] = useState('')
   const [rainPoint, setRainPoint] = useState<Endpoint | null>(null)
   const [weather, setWeather] = useState<WeatherResponse | null>(null)
+  const [weatherError, setWeatherError] = useState<string | null>(null)
   const [reports, setReports] = useState<CommunityReport[] | null>(null)
   const [reportListError, setReportListError] = useState<string | null>(null)
   const [reportPoint, setReportPoint] = useState<Endpoint | null>(null)
@@ -431,6 +432,23 @@ export default function RiskMap() {
   const [hovered, setHovered] = useState<RouteMode | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Numbers each route request; an answer to an older one (the places were
+  // cleared or changed meanwhile) is dropped, not drawn.
+  const routeRequest = useRef(0)
+  // Routes for a replayed day are not routes for today: switching drops them,
+  // and an answer still on its way for the old setting is dropped too.
+  const replayRef = useRef(replay)
+  useEffect(() => {
+    replayRef.current = replay
+  }, [replay])
+  const [routesReplay, setRoutesReplay] = useState(replay)
+  if (routesReplay !== replay) {
+    setRoutesReplay(replay)
+    setRoutes({ safest: null, fastest: null })
+    setFailures([])
+    setError(null)
+    setLoading(false)
+  }
 
   const filteredZones = zones?.filter((zone) =>
     `${zone.name} ${zone.district}`.toLocaleLowerCase().includes(zoneSearch.trim().toLocaleLowerCase()),
@@ -492,11 +510,13 @@ export default function RiskMap() {
     const clearPicks = () => {
       navigator.vibrate?.(30)
       rainPopup.current?.remove()
+      routeRequest.current += 1
       setFrom(null)
       setTo(null)
       setRoutes({ safest: null, fastest: null })
       setFailures([])
       setError(null)
+      setLoading(false)
       pickTarget.current = 'from'
       setNextClickSets('from')
       try {
@@ -574,6 +594,7 @@ export default function RiskMap() {
       popupButton.addEventListener('click', (popupEvent) => {
         popupEvent.stopPropagation()
         setWeather(null)
+        setWeatherError(null)
         setRainPoint(picked)
       })
       const reportButton = document.createElement('button')
@@ -781,11 +802,15 @@ export default function RiskMap() {
     let active = true
     getWeather({ lat: rainPoint.lat, lon: rainPoint.lon }, replay)
       .then((response) => {
-        if (active) setWeather(response)
+        if (!active) return
+        setWeather(response)
+        setWeatherError(null)
       })
-      .catch(() => {
-        // Null weather keeps the card on its neutral waiting message.
-        if (active) setWeather(null)
+      .catch((err) => {
+        // Say why, rather than wait for data that is not coming.
+        if (!active) return
+        setWeather(null)
+        setWeatherError(errorDetail(err))
       })
 
     return () => {
@@ -1115,6 +1140,7 @@ export default function RiskMap() {
   const handleSubmit = useCallback(async (leave: string = depart) => {
     if (!from || !to) return
 
+    const ticket = ++routeRequest.current
     setLoading(true)
     setError(null)
     setFailures([])
@@ -1130,6 +1156,7 @@ export default function RiskMap() {
       { lat: to.lat, lon: to.lon },
       { depart: leave || null, replay },
     )
+    if (ticket !== routeRequest.current || replayRef.current !== replay) return
 
     setRoutes({ safest: comparison.safest, fastest: comparison.fastest })
     if (!comparison.safest && !comparison.fastest) {
@@ -1153,7 +1180,8 @@ export default function RiskMap() {
         note: reportNote.trim(),
         reporter_id: getOrCreateReporterId(),
       })
-      setReports((current) => (current ? [report, ...current] : [report]))
+      // A double tap gets the first report back, so it replaces rather than repeats.
+      setReports((current) => [report, ...(current ?? []).filter((item) => item.id !== report.id)])
       setReportPoint(null)
       setReportNote('')
       // Redo a planned route, so Safest can steer around the new report.
@@ -1480,7 +1508,9 @@ export default function RiskMap() {
             <h4 id="rain-card-heading">{t('Rain at selected point')}</h4>
             <button type="button" onClick={() => setRainPoint(null)}>{t('Close')}</button>
           </div>
-          {!weather ? (
+          {weatherError ? (
+            <p className="rain-waiting" role="alert">{weatherError}</p>
+          ) : !weather ? (
             <p className="rain-waiting" role="status">{t('Waiting for live data')}</p>
           ) : (
             <>

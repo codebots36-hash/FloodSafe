@@ -50,6 +50,9 @@ RELAY_FILE = os.path.join(DATA, "weather_relay.json")
 ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 HISTORY_DIR = os.path.join(DATA, "weather_history")
 ARCHIVE_FROM = date(1940, 1, 1)
+# ERA5 is published about five days late; before that the archive returns empty
+# hours, and a replay file is kept for good, so a newer date is refused.
+ARCHIVE_LAG_DAYS = 6
 LEAD_DAYS = 3  # fetched before the date, to fill the 24 h window and the 48 h before it
 
 _lock = threading.Lock()
@@ -268,9 +271,10 @@ def parse_day(text):
         day = datetime.strptime(text, "%Y-%m-%d").date()
     except (TypeError, ValueError):
         raise RuntimeError("A replay date must look like YYYY-MM-DD.")
-    today = datetime.now(IST).date()
-    if day >= today:
-        raise RuntimeError(f"{text} is not in the past, so there is no record of it yet.")
+    latest = datetime.now(IST).date() - timedelta(days=ARCHIVE_LAG_DAYS)
+    if day > latest:
+        raise RuntimeError(f"The rainfall record is published about five days late, so the latest "
+                           f"day that can be replayed is {latest.isoformat()}.")
     if day < ARCHIVE_FROM:
         raise RuntimeError(f"The rainfall record starts in {ARCHIVE_FROM.year}.")
     return day
@@ -304,11 +308,14 @@ def history(points, day):
             # The day after as well, so "the next 24 hours" exist for a date
             # whose worst hour falls late in the evening.
             "end_date": min(day + timedelta(days=1),
-                            datetime.now(IST).date() - timedelta(days=1)).isoformat(),
+                            datetime.now(IST).date() - timedelta(days=ARCHIVE_LAG_DAYS)).isoformat(),
             "timezone": "Asia/Kolkata",
             "models": "era5",
         }
-        response = requests.get(ARCHIVE, params=params, timeout=TIMEOUT_S)
+        try:
+            response = requests.get(ARCHIVE, params=params, timeout=TIMEOUT_S)
+        except requests.RequestException as exc:
+            raise WeatherUnavailable(f"The rainfall record for {day} could not be reached: {exc}")
         if response.status_code != 200:
             reason = response.text[:200]
             try:
@@ -316,7 +323,10 @@ def history(points, day):
             except ValueError:
                 pass
             raise WeatherUnavailable(f"The rainfall record for {day} could not be read: {reason}")
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError:
+            raise WeatherUnavailable(f"The rainfall record for {day} came back unreadable.")
         for k, one in zip(chunk, payload if isinstance(payload, list) else [payload]):
             stored[k] = one
 

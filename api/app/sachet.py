@@ -96,7 +96,7 @@ def parse_cap(xml, guid, link):
 def _current(alert, now):
     try:
         return not alert["expires"] or datetime.fromisoformat(alert["expires"]) > now
-    except ValueError:
+    except (ValueError, TypeError):  # TypeError: an expiry with no time zone
         return True
 
 

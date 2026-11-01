@@ -9,7 +9,12 @@ const EVENTS = [
   { date: '2013-06-17', label: 'Kedarnath disaster, 17 Jun 2013' },
 ]
 
-const yesterday = () => new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+// The ERA5 record is published about five days late; the API refuses anything newer.
+const ARCHIVE_LAG_DAYS = 6
+const latestDay = () =>
+  new Date(Date.now() - ARCHIVE_LAG_DAYS * 86_400_000).toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Kolkata',
+  })
 
 /**
  * One switch for the whole app: routing, zones, guidance and rain then run on
@@ -48,7 +53,7 @@ export default function ReplayMode() {
         <input
           type="date"
           min="1940-01-01"
-          max={yesterday()}
+          max={latestDay()}
           value={date}
           onChange={(event) => setDate(event.target.value)}
         />

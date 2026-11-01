@@ -381,19 +381,29 @@ def get_responder_summary():
             shelters = len(json.load(fh)["items"])
     except OSError:
         shelters = None
+    try:
+        report_count = len(reports.active())
+        pings = sos.pings()
+    except DBError as exc:
+        print(f"[responder] database could not be read: {exc}", flush=True)
+        report_count, pings = None, []
     return {
         "as_of": now.isoformat(timespec="seconds"),
-        "reports_last_24h": len(reports.active()),
+        "reports_last_24h": report_count,
         "critical_zones": critical,
         "shelters_count": shelters,
         "sos_pings": [{"lat": p["lat"], "lon": p["lon"],
                        "time": datetime.fromtimestamp(p["created_ts"], IST).isoformat(timespec="seconds")}
-                      for p in sos.pings()],
+                      for p in pings],
     }
 
 
 def client_ip(request: Request):
-    return request.client.host if request.client else "unknown"
+    """The visitor's address. On Render a proxy makes every request, so the visitor
+    is the first X-Forwarded-For entry; a client can fake that header, which only
+    lets it dodge a per-address limit that is there to blunt floods, not liars."""
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    return forwarded or (request.client.host if request.client else "unknown")
 
 
 @app.get("/reports")
