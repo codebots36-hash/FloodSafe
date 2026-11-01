@@ -3,6 +3,7 @@ import { getWarnings, type WarningsResponse } from '../api'
 import { formatWhen, useSettings, useT } from '../settings'
 
 const REFRESH_MS = 10 * 60 * 1000
+const SACHET_SITE = 'https://sachet.ndma.gov.in/'
 
 /**
  * NDMA SACHET alerts, shown as issued and kept apart from FloodSafe's own
@@ -67,7 +68,8 @@ export default function OfficialWarnings() {
                     {alert.sender} · {alert.area}
                     {alert.expires && ` · ${t('Until')} ${formatWhen(alert.expires)}`}
                   </small>
-                  <a href={alert.link} target="_blank" rel="noopener noreferrer">
+                  {/* alert.link is the raw CAP XML; SACHET has no page per alert, so open its site. */}
+                  <a href={SACHET_SITE} target="_blank" rel="noopener noreferrer">
                     sachet.ndma.gov.in
                   </a>
                 </li>
