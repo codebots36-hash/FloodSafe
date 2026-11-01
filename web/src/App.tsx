@@ -15,28 +15,42 @@ const HOLD_MS = 2000
 
 type StatusRow = [label: string, value: string | null]
 
-/** Live figures for the status table; a figure that cannot be read stays "—". */
+// The free API server sleeps when idle and takes about a minute to wake, so a
+// figure that fails to load is asked for again until the server answers.
+const STATUS_RETRY_MS = 10_000
+
+/** Live figures for the status table; a figure not read yet shows "Waiting for live data". */
 function useSystemStatus(replay: string | null): StatusRow[] {
   const [rows, setRows] = useState<Record<string, string>>({})
   useEffect(() => {
     let active = true
+    const timers: number[] = []
     const put = (label: string) => (value: string) => {
       if (active) setRows((current) => ({ ...current, [label]: value }))
     }
-    getHealth().then((h) => put('Road network nodes covered')(h.nodes.toLocaleString())).catch(() => undefined)
-    Promise.all([getShelters(), getHospitals()])
-      .then(([s, h]) => put('Shelters & hospitals mapped')(`${s.length} / ${h.length}`))
-      .catch(() => undefined)
-    getReports().then((r) => put('Active hazard reports right now')(String(r.items.length))).catch(() => undefined)
-    getZones(replay)
-      .then((z) => {
+    const keepTrying = (load: () => Promise<void>) => {
+      const attempt = () =>
+        load().catch(() => {
+          if (active) timers.push(window.setTimeout(attempt, STATUS_RETRY_MS))
+        })
+      void attempt()
+    }
+    keepTrying(() => getHealth().then((h) => put('Road network nodes covered')(h.nodes.toLocaleString())))
+    keepTrying(() =>
+      Promise.all([getShelters(), getHospitals()]).then(([s, h]) =>
+        put('Shelters & hospitals mapped')(`${s.length} / ${h.length}`)),
+    )
+    keepTrying(() => getReports().then((r) => put('Active hazard reports right now')(String(r.items.length))))
+    keepTrying(() =>
+      getZones(replay).then((z) => {
         const wettest = [...z.zones].sort((a, b) => (b.rain_mm.h24 ?? 0) - (a.rain_mm.h24 ?? 0))[0]
         if (wettest) put('Wettest zone, last 24 h')(`${wettest.name} — ${wettest.rain_mm.h24 ?? 0} mm`)
         put('Zones at WATCH or CRITICAL')(String(z.zones.filter((zone) => zone.status !== 'SAFE').length))
-      })
-      .catch(() => undefined)
+      }),
+    )
     return () => {
       active = false
+      timers.forEach((timer) => window.clearTimeout(timer))
     }
   }, [replay])
   return [
