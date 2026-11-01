@@ -57,6 +57,7 @@ Run from the repository root, in this order. Raw files go to `pipeline/raw/`, wh
 | 6 | `pipeline/build_road_risk.py` | per-road risk, landslide flag, map layers |
 | 7 | `pipeline/build_places.py` | localities, shelters, hospitals, 200 zones |
 | 8 | `pipeline/fetch_era5.py`, then `calibrate_thresholds.py` | rain thresholds |
+| 9 | `pipeline/backtest_routes.py` | does Safest avoid real landslides? (`out/backtest_routes.json`) |
 
 ## Data sources and licences
 
@@ -82,5 +83,11 @@ Everything is real, published data. Nothing is simulated.
 - **Per-zone adjustment.** Shifting each zone's depths by hazard class and soil group is a modelling choice, not a fitted result.
 - **Atlas accuracy.** The atlas map is embedded at about 100 dpi, so one source pixel is about 400 m on the ground. Its zones are good to a few kilometres.
 - **Landslide model.** Gradient-boosted trees on 11 terrain, soil and land-cover features, trained on the 109 NASA catalogue landslides in Uttarakhand placed within 10 km (each moved to the nearest road within that accuracy) against 1,089 road points at least 5 km from any. On held-out 25 km blocks it ranks landslides above other roads with ROC AUC 0.84, against 0.74 for the old hand-weighted index on the same points (better in 4 of 5 folds). The catalogue is collected from news and most events are placed only to 5 or 10 km, so treat the flag as a strong hint, not a prediction. Details: `pipeline/out/landslide_model_meta.json`. If a retrained model ever stops beating the index, the build falls back to the index on its own.
+- **Does Safest avoid real landslides? Not yet better than chance.** `pipeline/backtest_routes.py` routes Fastest and Safest (no rain) between every pair of 83 towns. For each landslide it uses flags from a model refitted without that landslide's 25 km fold. It counts 38,588 Fastest routes passing within 1 km of one of 81 held-out landslides (more than 5 km from either end), and compares each with a random stretch of the same route at least 5 km from any catalogued slide.
+  - The risk layer does find the danger: 67% of held-out landslides lie within 1 km of a road flagged landslide-prone, against 17% of random road points; 42% are near an EXTREME flood-class road, against 6%.
+  - The route choice does not yet turn that into avoidance. Averaged per landslide, Safest avoided 43% of the landslides and 67% of the control stretches. Many slides sit on the only road up a valley: a way around within 3x the Fastest time existed for 69% of them, against 92% of control stretches. Even where one existed, Safest avoided 64% of landslides and 74% of controls (paired gap -19 to -1 points, 95% bootstrap over landslides).
+  - On these trips Safest takes a median 1.74x the Fastest time.
+  - Dharali (5 Aug 2025, Uttarkashi to Gangotri) has no way around: both routes pass Dharali, and Safest says "33.1 km of this route is rated EXTREME. No way around it was found." Kedarnath (16 Jun 2013, Rudraprayag to Sonprayag): Safest drops all 7.6 km of EXTREME road for 14 km more, but must still reach Sonprayag. Gaurikund is 3.3 km from the nearest road in the graph and cannot be routed to.
+  - Limits: catalogue points are placed only to 1-10 km and moved to the nearest road, so the matched road may not be the one that failed; no rain is used. Penalties have not been tuned to this test; tuning them would need a fresh hold-out to mean anything.
 - **Forecast-timed routing** reads each road's rain from the nearest of the 200 zones within 20 km, at the hour the route being searched reaches it. The search keeps only the cheapest way into each junction, so a dearer way that arrives earlier, before the rain, is not explored further. Waiting for rain to pass is not considered. Replay uses the rain that fell (ERA5), not the forecast issued that day.
 - **Roads outside Uttarakhand** have no risk class and are shown as "no data", never as safe.

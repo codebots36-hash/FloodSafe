@@ -266,16 +266,7 @@ def score_edges(index, prone_cut, gt):
         todo = np.flatnonzero(in_state)
         for chunk in np.array_split(todo, max(1, len(todo) // 1_000_000)):
             p[chunk] = model.predict_proba(slide_model.features(row[chunk], col[chunk]))[:, 1]
-        # A road takes its worst point. The cut is set on roads, weighted by their
-        # sample count (~length), so PRONE_ROAD_SHARE of road length is flagged:
-        # a cut on points would flag almost every long road somewhere along it.
-        span_p = np.full(n_span, -1.0, dtype=np.float32)
-        np.maximum.at(span_p, span[in_state], p[in_state])
-        weight = np.bincount(span[in_state], minlength=n_span)
-        order = np.argsort(-span_p)
-        flagged = order[np.cumsum(weight[order]) <= PRONE_ROAD_SHARE * weight.sum()]
-        span_slide[flagged] = True
-        meta["prone_cutoff"] = round(float(span_p[flagged].min()), 4) if len(flagged) else None
+        span_slide, meta["prone_cutoff"] = prone_spans(span, p, in_state, n_span)
         log(f"landslide-prone from the trained model (CV AUC {meta['validation']['model_auc']}): "
             f"worst-point probability >= {meta['prone_cutoff']}", t0)
     else:
@@ -287,6 +278,21 @@ def score_edges(index, prone_cut, gt):
     span_surveyed = (span_score >= 0) & (span_score % 2 == 1)
     log("edges: scored", t0)
     return span_risk, span_surveyed, span_slide, off, ll, li[in_state], meta
+
+
+def prone_spans(span, p, in_state, n_span):
+    """(bool per span, cutoff): a road takes its worst point's probability, and
+    the cut is set on roads weighted by their sample count (~length), so
+    PRONE_ROAD_SHARE of road length is flagged. A cut on points would flag
+    almost every long road somewhere along it."""
+    span_p = np.full(n_span, -1.0, dtype=np.float32)
+    np.maximum.at(span_p, span[in_state], p[in_state])
+    weight = np.bincount(span[in_state], minlength=n_span)
+    order = np.argsort(-span_p)
+    flagged = order[np.cumsum(weight[order]) <= PRONE_ROAD_SHARE * weight.sum()]
+    out = np.zeros(n_span, dtype=bool)
+    out[flagged] = True
+    return out, (round(float(span_p[flagged].min()), 4) if len(flagged) else None)
 
 
 def trained_model():
