@@ -338,10 +338,10 @@ function Portal() {
         </a>
 
         <nav className="portal-nav">
+          <a href="#hazard-reports">{t('Hazard Reports')}</a>
           <a href="#live-status">{t('System Status')}</a>
           <a href="#guidance">{t('Flood Guidance')}</a>
           <a href="#services">{t('Services')}</a>
-          <a href="#hazard-reports">{t('Hazard Reports')}</a>
           <a className="nav-cta" href={MAP_HASH} target="_blank" rel="noopener">{t('Open Map Tool')}</a>
         </nav>
       </header>
@@ -351,6 +351,11 @@ function Portal() {
           <strong>⚠ {t('Public Advisory:')}</strong>{' '}
           {t('Road conditions can change rapidly during monsoon season. Always verify local conditions before travel.')}
         </div>
+
+        {/* Official NDMA SACHET warnings come first: they outrank anything FloodSafe works out itself. */}
+        <section id="hazard-reports" className="portal-section">
+          <OfficialWarnings />
+        </section>
 
         <section className="hero">
           <div className="hero-copy">
@@ -470,10 +475,6 @@ function Portal() {
           </Suspense>
           <NotificationSettings />
           <ReplayMode />
-        </section>
-
-        <section id="hazard-reports" className="portal-section">
-          <OfficialWarnings />
         </section>
 
         <footer className="portal-footer">
