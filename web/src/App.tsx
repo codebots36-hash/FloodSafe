@@ -16,8 +16,11 @@ const HOLD_MS = 2000
 type StatusRow = [label: string, value: string | null]
 
 // The free API server sleeps when idle and takes about a minute to wake, so a
-// figure that fails to load is asked for again until the server answers.
+// figure that fails to load is asked for again until the server answers. The
+// request that wakes it can hang rather than fail, so one taking longer than
+// STATUS_TIMEOUT_MS counts as failed too.
 const STATUS_RETRY_MS = 10_000
+const STATUS_TIMEOUT_MS = 20_000
 
 /** Live figures for the status table; a figure not read yet shows "Waiting for live data". */
 function useSystemStatus(replay: string | null): StatusRow[] {
@@ -30,7 +33,12 @@ function useSystemStatus(replay: string | null): StatusRow[] {
     }
     const keepTrying = (load: () => Promise<void>) => {
       const attempt = () =>
-        load().catch(() => {
+        Promise.race([
+          load(),
+          new Promise<never>((_, reject) => {
+            timers.push(window.setTimeout(() => reject(new Error('timed out')), STATUS_TIMEOUT_MS))
+          }),
+        ]).catch(() => {
           if (active) timers.push(window.setTimeout(attempt, STATUS_RETRY_MS))
         })
       void attempt()
