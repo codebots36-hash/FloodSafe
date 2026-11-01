@@ -3,13 +3,15 @@ import { useT } from '../settings'
 import type { RouteFailure, RouteMode, RouteResponse } from '../api'
 import {
   NO_DATA_COLOUR,
-  PLACES,
   RISK_COLOURS,
   RISK_ORDER,
   type Endpoint,
+  type Place,
 } from '../routeOptions'
 
 interface RoutePanelProps {
+  /** Places listed in From and To. */
+  places: Place[]
   from: Endpoint | null
   to: Endpoint | null
   loading: boolean
@@ -77,14 +79,14 @@ const CARD_LINE_HINTS: Record<RouteMode, string> = {
   fastest: 'Thin line underneath',
 }
 
-function isPicked(endpoint: Endpoint | null) {
-  return Boolean(endpoint) && !PLACES.some((place) => place.name === endpoint!.label)
+function isPicked(places: Place[], endpoint: Endpoint | null) {
+  return Boolean(endpoint) && !places.some((place) => place.name === endpoint!.label)
 }
 
-function selectValue(endpoint: Endpoint | null) {
+function selectValue(places: Place[], endpoint: Endpoint | null) {
   if (!endpoint) return ''
-  if (isPicked(endpoint)) return 'picked'
-  return PLACES.find((place) => place.name === endpoint.label)!.id
+  if (isPicked(places, endpoint)) return 'picked'
+  return places.find((place) => place.name === endpoint.label)!.id
 }
 
 interface RouteCardProps {
@@ -214,6 +216,7 @@ function RouteCard({
 }
 
 export default function RoutePanel({
+  places,
   from,
   to,
   loading,
@@ -283,14 +286,14 @@ export default function RoutePanel({
         <label>
           <span>{t('From')}</span>
           <select
-            value={locating ? 'gps' : selectValue(from)}
+            value={locating ? 'gps' : selectValue(places, from)}
             onChange={(event) => onSelectFrom(event.target.value)}
             disabled={locating}
           >
             <option value="">{t('Select a place…')}</option>
             <option value="gps">{locating ? t('Finding your location…') : t('📍 My location (GPS)')}</option>
-            {isPicked(from) && <option value="picked">{from!.label}</option>}
-            {PLACES.map((place) => (
+            {isPicked(places, from) && <option value="picked">{from!.label}</option>}
+            {places.map((place) => (
               <option key={place.id} value={place.id}>
                 {place.name}
               </option>
@@ -301,12 +304,12 @@ export default function RoutePanel({
         <label>
           <span>{t('To')}</span>
           <select
-            value={selectValue(to)}
+            value={selectValue(places, to)}
             onChange={(event) => onSelectTo(event.target.value)}
           >
             <option value="">{t('Select a place…')}</option>
-            {isPicked(to) && <option value="picked">{to!.label}</option>}
-            {PLACES.map((place) => (
+            {isPicked(places, to) && <option value="picked">{to!.label}</option>}
+            {places.map((place) => (
               <option key={place.id} value={place.id}>
                 {place.name}
               </option>
