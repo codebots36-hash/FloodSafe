@@ -5,7 +5,7 @@ FloodSafe is flood-aware navigation for Uttarakhand, India. It routes people aro
 
 ## Team
 
-- Shiv: data pipeline and backend API
+- Shivang: data pipeline and backend API
 - Waheed: React app
 - Shourya: React app
 
