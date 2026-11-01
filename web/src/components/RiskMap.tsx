@@ -373,6 +373,11 @@ export default function RiskMap() {
 
   const stageRef = useRef<HTMLDivElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  // Hides the side panel (search and routes) so the map can use the whole width.
+  const [panelHidden, setPanelHidden] = useState(false)
+  useEffect(() => {
+    map.current?.resize()
+  }, [panelHidden])
 
   useEffect(() => {
     const sync = () => setIsFullscreen(document.fullscreenElement === stageRef.current)
@@ -1189,7 +1194,7 @@ export default function RiskMap() {
   }, [reportPoint, mapReady])
 
   return (
-    <div className="risk-map-wrapper">
+    <div className={`risk-map-wrapper${panelHidden ? ' panel-hidden' : ''}`}>
       <div className="locality-search">
         <input
           type="search"
@@ -1243,6 +1248,16 @@ export default function RiskMap() {
       />
 
       <div className="risk-map-stage" ref={stageRef}>
+        <button
+          type="button"
+          className="risk-map-panel-toggle"
+          onClick={() => setPanelHidden((hidden) => !hidden)}
+          aria-expanded={!panelHidden}
+          title={panelHidden ? t('Show panel') : t('Hide panel')}
+          aria-label={panelHidden ? t('Show panel') : t('Hide panel')}
+        >
+          {panelHidden ? '›' : '‹'}
+        </button>
         <details className="risk-map-controls" open={!IS_PHONE}>
           <summary>{t('Layers')}</summary>
           <label>

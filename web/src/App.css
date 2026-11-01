@@ -1676,7 +1676,22 @@ footer {
 .map-page .route-panel { grid-column: 1; grid-row: 2; margin: 0; border: 0; border-radius: 0; overflow-y: auto; }
 .map-page .risk-map-stage { grid-column: 2; grid-row: 1 / 3; min-height: 0; }
 .map-page .risk-map-canvas { height: 100%; border-radius: 0; }
+/* The grid stays as it is; the map simply stretches over the emptied side column. */
+.map-page .panel-hidden .risk-map-stage { grid-column: 1 / -1; }
+.map-page .panel-hidden .locality-search,
+.map-page .panel-hidden .route-panel { display: none; }
+/* A tab on the map's left edge that hides or shows the side panel. */
+.risk-map-panel-toggle { display: none; }
+.map-page .risk-map-panel-toggle {
+  position: absolute; z-index: 9; left: 0; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; width: 22px; height: 56px; padding: 0;
+  border: 1px solid #c5ccd6; border-left: 0; border-radius: 0 8px 8px 0;
+  background: #fff; color: #08263d; font-size: 22px; line-height: 1; cursor: pointer;
+  box-shadow: 2px 0 8px rgb(0 0 0 / .2);
+}
+.map-page .risk-map-panel-toggle:hover { background: #eef4f8; }
 @media (max-width: 800px) {
+  .map-page .risk-map-panel-toggle { display: none; }
   .map-page { height: auto; min-height: 100vh; }
   .map-page .risk-map-wrapper { display: block; }
   .map-page .risk-map-stage { height: 70vh; }

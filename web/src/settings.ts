@@ -173,6 +173,8 @@ const HI: Record<string, string> = {
   'Hospitals': 'अस्पताल',
   'Community reports': 'सामुदायिक रिपोर्ट',
   'Layers': 'परतें',
+  'Hide panel': 'पैनल छिपाएँ',
+  'Show panel': 'पैनल दिखाएँ',
   'Report a problem': 'समस्या बताएँ',
   'Cancel': 'रद्द करें',
   'Full screen': 'पूरी स्क्रीन',
