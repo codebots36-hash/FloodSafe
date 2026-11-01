@@ -386,6 +386,20 @@ export const getHospitals = () =>
 export const getLocalities = () =>
   request<{ items: Locality[] }>('/localities').then((body) => body.items)
 
+/** The phone's location (GPS works without a data connection). */
+export function getPosition() {
+  return new Promise<GeolocationPosition>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('This browser cannot share your location.'))
+      return
+    }
+    navigator.geolocation.getCurrentPosition(resolve, () =>
+      reject(new Error('Could not get your location. Allow location access and try again.')),
+      { enableHighAccuracy: true, timeout: 15000 },
+    )
+  })
+}
+
 // ---- SOS ----------------------------------------------------------------
 
 export interface SosRequest {

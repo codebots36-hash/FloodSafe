@@ -29,6 +29,13 @@ interface RoutePanelProps {
   depart: string
   onDepartChange: (value: string) => void
   replay: string | null
+  /** Route to the nearest shelter or hospital from From (or the phone's location). */
+  onNearest: (kind: 'shelter' | 'hospital') => void
+  nearestBusy: 'shelter' | 'hospital' | null
+  /** The last search that brought routes back; asking it again works offline. */
+  lastSearch: { from: Endpoint; to: Endpoint } | null
+  onLastSearch: () => void
+  offline: boolean
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -213,6 +220,11 @@ export default function RoutePanel({
   depart,
   onDepartChange,
   replay,
+  onNearest,
+  nearestBusy,
+  lastSearch,
+  onLastSearch,
+  offline,
 }: RoutePanelProps) {
   const t = useT()
   const hasResult = Boolean(routes.safest || routes.fastest)
@@ -321,6 +333,40 @@ export default function RoutePanel({
           {loading ? t('Finding routes…') : t('Get routes')}
         </button>
       </div>
+
+      <div className="route-quick">
+        {(['shelter', 'hospital'] as const).map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            onClick={() => onNearest(kind)}
+            disabled={loading || nearestBusy !== null}
+          >
+            {nearestBusy === kind
+              ? t('Finding…')
+              : t(kind === 'shelter' ? 'Nearest shelter' : 'Nearest hospital')}
+          </button>
+        ))}
+      </div>
+      <p className="route-quick-note">
+        {t(from ? 'Nearest to From, in a straight line.' : 'Nearest to where you are, in a straight line.')}
+      </p>
+
+      {offline && (
+        <p className="route-offline" role="status">
+          {t('You are offline. Your last searched route still works; new routes need internet.')}
+        </p>
+      )}
+      {lastSearch && (
+        <button
+          type="button"
+          className={`route-last${offline ? ' is-offline' : ''}`}
+          onClick={onLastSearch}
+          disabled={loading}
+        >
+          {t('Last searched')}: {lastSearch.from.label} → {lastSearch.to.label}
+        </button>
+      )}
 
       {loading && (
         <p className="route-loading" role="status">

@@ -1198,6 +1198,62 @@ footer {
   cursor: not-allowed;
 }
 
+/* Nearest shelter / hospital, and the last search: quick ways to a route. */
+.route-quick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.route-quick button,
+.route-last {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #1f4e79;
+  border-radius: 6px;
+  background: #fff;
+  color: #1f4e79;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.route-quick button:disabled,
+.route-last:disabled {
+  border-color: #c5ccd6;
+  color: #9aa5b1;
+  cursor: not-allowed;
+}
+
+.route-quick-note {
+  margin: 0.3rem 0 0;
+  font-size: 12px;
+  color: #5b6b78;
+}
+
+.route-last {
+  display: block;
+  width: 100%;
+  margin-top: 0.6rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+/* Offline, the last search is the one route that still works, so it stands out. */
+.route-last.is-offline {
+  border-color: #1f7a3d;
+  background: #1f7a3d;
+  color: #fff;
+}
+
+.route-offline {
+  margin: 0.6rem 0 0;
+  padding: 6px 10px;
+  border-left: 4px solid #d99a12;
+  background: #fff7e0;
+  font-size: 13px;
+}
+
 .route-loading {
   display: flex;
   align-items: center;

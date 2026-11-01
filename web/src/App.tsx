@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import './App.css'
-import { getHealth, getHospitals, getReports, getShelters, getZones, sendSos } from './api'
+import { getHealth, getHospitals, getPosition, getReports, getShelters, getZones, sendSos } from './api'
 import FloodGuidance from './components/FloodGuidance'
 import OfficialWarnings from './components/OfficialWarnings'
 import NotificationSettings from './components/NotificationSettings'
@@ -79,19 +79,6 @@ function loadSosContact() {
   } catch {
     return { name: '', numbers: '' }
   }
-}
-
-function getPosition() {
-  return new Promise<GeolocationPosition>((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('This browser cannot share your location.'))
-      return
-    }
-    navigator.geolocation.getCurrentPosition(resolve, () =>
-      reject(new Error('Could not get your location. Allow location access and try again.')),
-      { enableHighAccuracy: true, timeout: 15000 },
-    )
-  })
 }
 
 function openSms(numbers: string[], body: string) {

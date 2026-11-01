@@ -19,6 +19,7 @@ import {
   createReport,
   getHospitals,
   getLocalities,
+  getPosition,
   getReports,
   getRouteComparison,
   getShelters,
@@ -352,6 +353,34 @@ function savedEndpoints(): { from: Endpoint | null; to: Endpoint | null } {
   }
 }
 
+// The last search that brought routes back. Kept apart from ENDPOINTS_KEY,
+// which a long press clears, and with its departure time, so asking again
+// builds the same request the service worker kept: that is what works offline.
+const LAST_SEARCH_KEY = 'floodsafe-last-search'
+export type LastSearch = { from: Endpoint; to: Endpoint; depart: string }
+
+function savedLastSearch(): LastSearch | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAST_SEARCH_KEY) ?? 'null')
+    return saved?.from && saved?.to ? { depart: '', ...saved } : null
+  } catch {
+    return null
+  }
+}
+
+export type PlaceKind = 'shelter' | 'hospital'
+
+/** The place nearest to a point in a straight line, with that distance in km. */
+function nearestPlace(places: MapPlace[], point: Endpoint) {
+  const kmX = 111.32 * Math.cos((point.lat * Math.PI) / 180)
+  let best: { place: MapPlace; km: number } | null = null
+  for (const place of places) {
+    const km = Math.hypot((place.lon - point.lon) * kmX, (place.lat - point.lat) * 110.57)
+    if (!best || km < best.km) best = { place, km }
+  }
+  return best
+}
+
 export default function RiskMap() {
   const { replay } = useSettings()
   const t = useT()
@@ -432,6 +461,18 @@ export default function RiskMap() {
   const [hovered, setHovered] = useState<RouteMode | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lastSearch, setLastSearch] = useState<LastSearch | null>(savedLastSearch)
+  const [nearestBusy, setNearestBusy] = useState<PlaceKind | null>(null)
+  const [offline, setOffline] = useState(() => !navigator.onLine)
+  useEffect(() => {
+    const sync = () => setOffline(!navigator.onLine)
+    window.addEventListener('online', sync)
+    window.addEventListener('offline', sync)
+    return () => {
+      window.removeEventListener('online', sync)
+      window.removeEventListener('offline', sync)
+    }
+  }, [])
   // Numbers each route request; an answer to an older one (the places were
   // cleared or changed meanwhile) is dropped, not drawn.
   const routeRequest = useRef(0)
@@ -1136,9 +1177,14 @@ export default function RiskMap() {
     [],
   )
 
-  // `leave` is passed when a departure was just applied and state may not hold it yet.
-  const handleSubmit = useCallback(async (leave: string = depart) => {
-    if (!from || !to) return
+  // `leave` and `ends` are passed when they were just set and state may not hold them yet.
+  const handleSubmit = useCallback(async (
+    leave: string = depart,
+    ends: { from: Endpoint; to: Endpoint } | null = null,
+  ) => {
+    const start = ends?.from ?? from
+    const end = ends?.to ?? to
+    if (!start || !end) return
 
     const ticket = ++routeRequest.current
     setLoading(true)
@@ -1147,25 +1193,79 @@ export default function RiskMap() {
     setHovered(null)
 
     try {
-      localStorage.setItem(ENDPOINTS_KEY, JSON.stringify({ from, to }))
+      localStorage.setItem(ENDPOINTS_KEY, JSON.stringify({ from: start, to: end }))
     } catch {
       // Remembering the trip is optional.
     }
     const comparison = await getRouteComparison(
-      { lat: from.lat, lon: from.lon },
-      { lat: to.lat, lon: to.lon },
+      { lat: start.lat, lon: start.lon },
+      { lat: end.lat, lon: end.lon },
       { depart: leave || null, replay },
     )
     if (ticket !== routeRequest.current || replayRef.current !== replay) return
 
     setRoutes({ safest: comparison.safest, fastest: comparison.fastest })
     if (!comparison.safest && !comparison.fastest) {
-      setError(comparison.failures[0]?.detail ?? 'No route came back.')
+      setError(navigator.onLine
+        ? comparison.failures[0]?.detail ?? 'No route came back.'
+        : t('You are offline. Only your last searched route is saved on this phone.'))
     } else {
       setFailures(comparison.failures)
+      const search = { from: start, to: end, depart: leave }
+      setLastSearch(search)
+      try {
+        localStorage.setItem(LAST_SEARCH_KEY, JSON.stringify(search))
+      } catch {
+        // Then only this session remembers it.
+      }
     }
     setLoading(false)
-  }, [from, to, depart, replay])
+  }, [from, to, depart, replay, t])
+
+  const openLastSearch = () => {
+    if (!lastSearch) return
+    setFrom(lastSearch.from)
+    setTo(lastSearch.to)
+    setDepart(lastSearch.depart)
+    pickTarget.current = 'from'
+    setNextClickSets('from')
+    void handleSubmit(lastSearch.depart, lastSearch)
+  }
+
+  // Routes from From (or, with no From, where the phone is) to the nearest
+  // shelter or hospital in a straight line. The lists come from the service
+  // worker's copy when offline, so the destination is still found and marked.
+  const goToNearest = async (kind: PlaceKind) => {
+    setNearestBusy(kind)
+    setError(null)
+    try {
+      let start = from
+      if (!start) {
+        const position = await getPosition()
+        start = {
+          label: t('Your location'),
+          lat: Number(position.coords.latitude.toFixed(5)),
+          lon: Number(position.coords.longitude.toFixed(5)),
+        }
+        setFrom(start)
+      }
+      const nearest = nearestPlace(await (kind === 'shelter' ? getShelters() : getHospitals()), start)
+      if (!nearest) throw new Error(t(kind === 'shelter' ? 'No shelters are known.' : 'No hospitals are known.'))
+      const end = {
+        label: `${nearest.place.name || t(kind === 'shelter' ? 'Shelter' : 'Hospital')} (${nearest.km.toFixed(1)} km)`,
+        lat: nearest.place.lat,
+        lon: nearest.place.lon,
+      }
+      setTo(end)
+      pickTarget.current = 'from'
+      setNextClickSets('from')
+      await handleSubmit(depart, { from: start, to: end })
+    } catch (err) {
+      setError(errorDetail(err))
+    } finally {
+      setNearestBusy(null)
+    }
+  }
 
   const handleReportSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1273,6 +1373,11 @@ export default function RiskMap() {
         depart={depart}
         onDepartChange={setDepart}
         replay={replay}
+        onNearest={(kind) => void goToNearest(kind)}
+        nearestBusy={nearestBusy}
+        lastSearch={lastSearch}
+        onLastSearch={openLastSearch}
+        offline={offline}
       />
 
       <div className="risk-map-stage" ref={stageRef}>
