@@ -161,6 +161,8 @@ const HI: Record<string, string> = {
   'Shelter': 'आश्रय',
   'Hospital': 'अस्पताल',
   'Your location': 'आपका स्थान',
+  '📍 My location (GPS)': '📍 मेरा स्थान (GPS)',
+  'Finding your location…': 'आपका स्थान खोज रहे हैं…',
   'Last searched': 'पिछली खोज',
   'Last shelter route': 'पिछला आश्रय रास्ता',
   'Last hospital route': 'पिछला अस्पताल रास्ता',

@@ -1245,18 +1245,40 @@ export default function RiskMap() {
   // Routes from From (or, with no From, where the phone is) to the nearest
   // shelter or hospital in a straight line. The lists come from the service
   // worker's copy when offline, so the destination is still found and marked.
+  /** Where the phone is, from GPS (no data connection needed), as From. */
+  const myLocation = async (): Promise<Endpoint> => {
+    const { coords } = await getPosition()
+    return {
+      label: `${t('Your location')} (±${Math.round(coords.accuracy)} m)`,
+      lat: Number(coords.latitude.toFixed(5)),
+      lon: Number(coords.longitude.toFixed(5)),
+    }
+  }
+
+  const [locating, setLocating] = useState(false)
+  const locateFrom = async () => {
+    setLocating(true)
+    setError(null)
+    try {
+      const here = await myLocation()
+      setFrom(here)
+      pickTarget.current = 'to'
+      setNextClickSets('to')
+      map.current?.flyTo({ center: [here.lon, here.lat], zoom: 13 })
+    } catch (err) {
+      setError(errorDetail(err))
+    } finally {
+      setLocating(false)
+    }
+  }
+
   const goToNearest = async (kind: PlaceKind) => {
     setNearestBusy(kind)
     setError(null)
     try {
       let start = from
       if (!start) {
-        const position = await getPosition()
-        start = {
-          label: t('Your location'),
-          lat: Number(position.coords.latitude.toFixed(5)),
-          lon: Number(position.coords.longitude.toFixed(5)),
-        }
+        start = await myLocation()
         setFrom(start)
       }
       const nearest = nearestPlace(await (kind === 'shelter' ? getShelters() : getHospitals()), start)
@@ -1376,7 +1398,9 @@ export default function RiskMap() {
         }}
         hovered={hovered}
         nextClickSets={nextClickSets}
-        onSelectFrom={(value) => selectEndpoint(value, setFrom)}
+        onSelectFrom={(value) =>
+          value === 'gps' ? void locateFrom() : selectEndpoint(value, setFrom)}
+        locating={locating}
         onSelectTo={(value) => selectEndpoint(value, setTo)}
         onHover={setHovered}
         onSubmit={handleSubmit}

@@ -20,7 +20,10 @@ interface RoutePanelProps {
   noDataKm: Record<RouteMode, number>
   hovered: RouteMode | null
   nextClickSets: 'from' | 'to'
+  /** A place id, or 'gps' for where the phone is. */
   onSelectFrom: (value: string) => void
+  /** True while the phone's GPS position is being read. */
+  locating: boolean
   onSelectTo: (value: string) => void
   onHover: (mode: RouteMode | null) => void
   /** Fetch both routes, leaving at `depart` (the time just applied, which state may not hold yet). */
@@ -222,6 +225,7 @@ export default function RoutePanel({
   hovered,
   nextClickSets,
   onSelectFrom,
+  locating,
   onSelectTo,
   onHover,
   onSubmit,
@@ -279,10 +283,12 @@ export default function RoutePanel({
         <label>
           <span>{t('From')}</span>
           <select
-            value={selectValue(from)}
+            value={locating ? 'gps' : selectValue(from)}
             onChange={(event) => onSelectFrom(event.target.value)}
+            disabled={locating}
           >
             <option value="">{t('Select a place…')}</option>
+            <option value="gps">{locating ? t('Finding your location…') : t('📍 My location (GPS)')}</option>
             {isPicked(from) && <option value="picked">{from!.label}</option>}
             {PLACES.map((place) => (
               <option key={place.id} value={place.id}>
