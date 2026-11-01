@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   type ExpressionSpecification,
   type GeoJSONSource,
@@ -45,6 +45,7 @@ import {
   RISK_COLOURS,
   RISK_ORDER,
   type Endpoint,
+  type Place,
 } from '../routeOptions'
 
 setWorkerUrl(workerUrl)
@@ -1167,6 +1168,23 @@ export default function RiskMap() {
           .slice(0, 6)
       : []
 
+  // From and To list the towns (localities with no parent), with the district
+  // added where two share a name. The built-in list stands in until they load.
+  const routePlaces = useMemo<Place[]>(() => {
+    const towns = localities.filter((item) => !item.parent)
+    if (towns.length === 0) return PLACES
+    const count = new Map<string, number>()
+    for (const item of towns) count.set(item.name, (count.get(item.name) ?? 0) + 1)
+    return towns
+      .map((item) => ({
+        id: item.id,
+        name: count.get(item.name)! > 1 ? `${item.name} (${item.district})` : item.name,
+        lat: item.lat,
+        lon: item.lon,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [localities])
+
   const flyToLocality = (item: Locality) => {
     map.current?.flyTo({ center: [item.lon, item.lat], zoom: 13 })
     setSearchText('')
@@ -1175,11 +1193,11 @@ export default function RiskMap() {
   const selectEndpoint = useCallback(
     (value: string, set: (endpoint: Endpoint | null) => void) => {
       if (!value || value === 'picked') return
-      const place = PLACES.find((item) => item.id === value)
+      const place = routePlaces.find((item) => item.id === value)
       if (!place) return
       set({ label: place.name, lat: place.lat, lon: place.lon })
     },
-    [],
+    [routePlaces],
   )
 
   // `leave` and `ends` are passed when they were just set and state may not hold
@@ -1381,6 +1399,7 @@ export default function RiskMap() {
       </div>
 
       <RoutePanel
+        places={routePlaces}
         from={from}
         to={to}
         loading={loading}
