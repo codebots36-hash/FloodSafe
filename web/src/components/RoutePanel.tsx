@@ -250,7 +250,8 @@ export default function RoutePanel({
         <p>
           {t('Pick two places, or click the map to set')}{' '}
           <strong>{t(nextClickSets === 'from' ? 'From' : 'To')}</strong>.{' '}
-          {t('Both the safest and the fastest route are fetched.')}
+          {t('Both the safest and the fastest route are fetched.')}{' '}
+          {t('Long-press the map to clear both places.')}
         </p>
       </div>
 

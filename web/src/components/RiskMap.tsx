@@ -479,7 +479,48 @@ export default function RiskMap() {
     map.current = instance
     instance.addControl(new NavigationControl(), 'top-right')
 
+    // Long press (right-click with a mouse) clears both picked places, so the
+    // next tap starts a new From. MapLibre turns a held finger into
+    // "contextmenu" on every phone, iPhone included.
+    let touching = false
+    let skipClick = false
+    const clearPicks = () => {
+      navigator.vibrate?.(30)
+      rainPopup.current?.remove()
+      setFrom(null)
+      setTo(null)
+      setRoutes({ safest: null, fastest: null })
+      setFailures([])
+      setError(null)
+      pickTarget.current = 'from'
+      setNextClickSets('from')
+      try {
+        localStorage.removeItem(ENDPOINTS_KEY)
+      } catch {
+        // Nothing saved to forget.
+      }
+    }
+    instance.on('contextmenu', () => {
+      if (reportModeRef.current) return
+      clearPicks()
+      // The finger lifting after a long press can still arrive as a tap.
+      if (touching) skipClick = true
+    })
+    instance.on('touchstart', () => {
+      touching = true
+    })
+    const endPress = () => {
+      touching = false
+      if (skipClick) window.setTimeout(() => (skipClick = false), 400)
+    }
+    instance.on('touchend', endPress)
+    instance.on('touchcancel', endPress)
+
     instance.on('click', (event) => {
+      if (skipClick) {
+        skipClick = false
+        return
+      }
       if (reportModeRef.current) {
         const lat = Number(event.lngLat.lat.toFixed(5))
         const lon = Number(event.lngLat.lng.toFixed(5))

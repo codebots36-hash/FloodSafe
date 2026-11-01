@@ -162,6 +162,7 @@ const HI: Record<string, string> = {
   'OK': 'ठीक है',
   'Pick two places, or click the map to set': 'दो जगहें चुनें, या मानचित्र पर क्लिक करके सेट करें',
   'Both the safest and the fastest route are fetched.': 'सबसे सुरक्षित और सबसे तेज़, दोनों रास्ते लाए जाते हैं।',
+  'Long-press the map to clear both places.': 'दोनों जगहें हटाने के लिए मानचित्र को देर तक दबाएँ।',
   'Fetching the safest and fastest routes — this can take a few seconds.':
     'सबसे सुरक्षित और सबसे तेज़ रास्ते लाए जा रहे हैं — इसमें कुछ सेकंड लग सकते हैं।',
   'Each stretch is judged on the rain at the hour you reach it (India time).': 'हर हिस्से को उस घंटे की वर्षा से आँका जाता है जब आप वहाँ पहुँचेंगे (भारतीय समय)।',
