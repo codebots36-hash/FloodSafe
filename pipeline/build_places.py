@@ -51,6 +51,7 @@ NEAR_LOCALITY_KM = 5
 DUPLICATE_M = 2000  # same name and district this close = one place mapped twice
 ZONE_RADIUS_M = 1000
 MAX_ZONES = 200
+MIN_PER_DISTRICT = 8  # every district gets at least this many, if it has them
 HSG = {1: "A", 2: "B", 3: "C", 4: "D"}
 EXPECTED_DISTRICTS = 13
 
@@ -227,13 +228,22 @@ def build_zones(localities, loc_utm, place):
         return (not (place[i] in TOWNS or worst % 2 == 1), -ffpi)
 
     candidates.sort(key=keep_first)
+    # Each district's first MIN_PER_DISTRICT go ahead of everything else, so
+    # districts with few towns are not crowded out by the busy ones.
+    taken, first, rest = {}, [], []
+    for c in candidates:
+        d = localities[c[0]]["district"]
+        taken[d] = taken.get(d, 0) + 1
+        (first if taken[d] <= MIN_PER_DISTRICT else rest).append(c)
+    candidates = first + rest
     kept, dropped = candidates[:MAX_ZONES], candidates[MAX_ZONES:]
     if dropped:
         types = {}
         for i, *_ in dropped:
             types[place[i]] = types.get(place[i], 0) + 1
-        log(f"zones: {len(candidates):,} localities qualify; kept {len(kept)} (towns and "
-            f"surveyed first, then highest FFPI), dropped {len(dropped):,} {types}")
+        log(f"zones: {len(candidates):,} localities qualify; kept {len(kept)} ({MIN_PER_DISTRICT} "
+            f"per district first, then towns and surveyed, then highest FFPI), "
+            f"dropped {len(dropped):,} {types}")
 
     zones = []
     for i, worst, s, _ in kept:
